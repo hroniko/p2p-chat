@@ -1,12 +1,28 @@
 package com.chat.p2p.model;
 
+/**
+ * Модель пира (участника сети).
+ * 
+ * Хранит информацию о другом участнике P2P сети:
+ * - ID (уникальный, как отпечаток пальца)
+ * - Имя (придуманное пользователем, как никнейм)
+ * - IP адрес (чтобы подключиться)
+ * - Порт (P2P порт для TCP соединений)
+ * - Статус доверия (trusted = свой, проверенный)
+ * - lastSeen (когда последний раз подавал признаки жизни)
+ * 
+ * Equals и hashCode переопределены только по ID -
+ * два пира с одним ID это один и тот же пир.
+ */
 public class Peer {
-    private String id;
-    private String name;
-    private String address;
-    private int port;
-    private long lastSeen;
-    private boolean connected;
+    private String id; // UUID (обрезанный)
+    private String name; // Имя из интерфейса
+    private String address; // IP адрес
+    private int port; // Порт P2P сервера
+    private long lastSeen; // Timestamp последнего "крика" в сеть
+    private boolean connected; // Есть ли активное TCP соединение
+    private boolean trusted; // Доверенный пир (прошёл авторизацию)
+    private String authToken; // Токен авторизации
 
     public Peer() {}
 
@@ -37,8 +53,14 @@ public class Peer {
     public boolean isConnected() { return connected; }
     public void setConnected(boolean connected) { this.connected = connected; }
 
+    public boolean isTrusted() { return trusted; }
+    public void setTrusted(boolean trusted) { this.trusted = trusted; }
+
+    public String getAuthToken() { return authToken; }
+    public void setAuthToken(String authToken) { this.authToken = authToken; }
+
     public String getWsUrl() {
-        return "ws://" + address + ":" + port + "/ws";
+        return "wss://" + address + ":" + port + "/ws";
     }
 
     @Override

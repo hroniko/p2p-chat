@@ -1,10 +1,21 @@
 package com.chat.p2p.model;
 
+/**
+ * Сообщение для обнаружения пиров в сети.
+ * 
+ * Отправляется по UDP broadcast каждые 3 секунды.
+ * Получатели видят IP отправителя и узнают о новом пире.
+ * 
+ * Простой JSON: { "type": "ANNOUNCE", "peerId": "...", "peerName": "...", "p2pPort": ... }
+ * 
+ * Зачем это нужно? Потому что в P2P нет центрального сервера.
+ * Каждый сам кричит о себе. Услышал - запомнил.
+ */
 public class DiscoveryMessage {
-    private String type = "ANNOUNCE";
-    private String peerId;
-    private String peerName;
-    private int p2pPort;
+    private String type = "ANNOUNCE"; // Всегда ANNOUNCE - мы объявляемся
+    private String peerId; // Уникальный ID - UUID обрезанный
+    private String peerName; // Имя, которое пользователь ввёл
+    private int p2pPort; // Порт P2P сервера
 
     public DiscoveryMessage() {}
 

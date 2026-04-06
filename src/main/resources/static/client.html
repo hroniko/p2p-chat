@@ -37,6 +37,14 @@
         .file-msg .info { flex: 1; }
         .file-msg .name { color: #4CAF50; font-size: 12px; }
         .file-msg .size { color: #888; font-size: 10px; }
+        .typing-indicator { font-size: 12px; color: #888; font-style: italic; height: 20px; }
+        .search-box { padding: 10px; background: #0f3460; display: none; }
+        .search-box input { flex: 1; padding: 8px; border: none; border-radius: 5px; background: #1a1a2e; color: #eee; }
+        .search-box button { padding: 8px 15px; border: none; border-radius: 5px; background: #4CAF50; color: white; cursor: pointer; margin-left: 5px; }
+        .peer-status { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+        .peer-status.online { background: #4CAF50; }
+        .peer-status.offline { background: #666; }
+        #chat-header button { margin-left: 5px; padding: 5px 10px; border: none; border-radius: 5px; background: #4CAF50; color: white; cursor: pointer; }
         #chat-input { padding: 10px; background: #0f3460; display: flex; gap: 10px; align-items: center; }
         #chat-input input { flex: 1; padding: 10px; border: none; border-radius: 5px; background: #1a1a2e; color: #eee; }
         #chat-input button, #attach-btn { padding: 10px 15px; border: none; border-radius: 5px; background: #4CAF50; color: white; cursor: pointer; font-size: 16px; }
@@ -47,6 +55,13 @@
         .transfer-box .progress { width: 100%; height: 10px; background: #0a0a1a; border-radius: 5px; margin: 15px 0; overflow: hidden; }
         .transfer-box .progress div { height: 100%; background: #4CAF50; transition: width 0.3s; }
         #notification { position: fixed; bottom: 20px; right: 20px; background: #0f3460; padding: 15px 20px; border-radius: 8px; display: none; border-left: 4px solid #4CAF50; }
+        .auth-modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; z-index: 1000; }
+        .auth-box { background: #16213e; padding: 30px; border-radius: 10px; text-align: center; min-width: 300px; }
+        .auth-box input { padding: 10px; border: none; border-radius: 5px; width: 100%; margin: 10px 0; background: #1a1a2e; color: #eee; }
+        .auth-box button { padding: 10px 20px; border: none; border-radius: 5px; margin: 5px; cursor: pointer; }
+        .auth-box .accept { background: #4CAF50; color: white; }
+        .auth-box .reject { background: #e94560; color: white; }
+        .trusted-badge { background: #4CAF50; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 5px; }
     </style>
 </head>
 <body>
@@ -55,7 +70,7 @@
         <input type="text" id="username" placeholder="Your name" maxlength="20">
         <button onclick="start()">Start</button>
     </div>
-    <div id="info">Your ID: <span id="my-id">-</span> | P2P Port: <span id="my-port">-</span></div>
+    <div id="info">Your ID: <span id="my-id">-</span> | P2P Port: <span id="my-port">-</span> | <span id="connection-status" style="color:#e94560">Connecting...</span></div>
     
     <div class="container">
         <div class="panel" id="peers-panel">
@@ -66,13 +81,21 @@
         <div class="panel" id="chat-panel">
             <div id="chat-header">
                 <span>Chat with <span id="chat-with">-</span></span>
-                <button onclick="closeChat()">Close</button>
+                <div>
+                    <button onclick="toggleSearch()">Search</button>
+                    <button onclick="closeChat()">Close</button>
+                </div>
             </div>
+            <div class="search-box" id="search-box">
+                <input type="text" id="search-input" placeholder="Search messages...">
+                <button onclick="searchMessages()">Find</button>
+            </div>
+            <div id="typing-indicator" class="typing-indicator"></div>
             <div id="chat-messages"></div>
             <div id="chat-input">
                 <input type="file" id="file-input" onchange="handleFileSelect(event)">
                 <button id="attach-btn" onclick="document.getElementById('file-input').click()">+</button>
-                <input type="text" id="messageInput" placeholder="Type a message..." onkeypress="if(event.key==='Enter')sendMessage()">
+                <input type="text" id="messageInput" placeholder="Type a message..." onkeypress="if(event.key==='Enter')sendMessage()" onfocus="onInputFocus()">
                 <button onclick="sendMessage()">Send</button>
             </div>
         </div>
@@ -85,15 +108,162 @@
             <div id="transfer-status">0%</div>
         </div>
     </div>
+    <div class="auth-modal" id="auth-modal">
+        <div class="auth-box">
+            <div id="auth-title">Authentication Request</div>
+            <div id="auth-peer">From: <span id="auth-peer-name">-</span></div>
+            <div id="auth-secret-display">Enter secret to trust:</div>
+            <input type="text" id="auth-secret-input" placeholder="Enter shared secret">
+            <div style="margin-top:15px">
+                <button class="accept" onclick="acceptAuth()">Accept</button>
+                <button class="reject" onclick="rejectAuth()">Reject</button>
+            </div>
+        </div>
+    </div>
     <div id="notification"></div>
 
     <script>
-        let myId, myPort, myName;
-        let currentChat = null;
-        let pollInterval;
+        // Состояние приложения
+        let myId, myPort, myName; // Мои данные - заполняются при старте
+        let currentChat = null; // С кем сейчас ведём беседу
+        let ws; // WebSocket соединение с сервером
+        let pollInterval; // Таймер для polling (фоллбэк если WebSocket не работает)
+        let typingTimeout; // Таймер для отправки "печатает..." - дебаунс
+        let deliveredMessages = new Set(); // Множество доставленных сообщений
+        
+        // UI ссылки - кэшируем чтобы не искать каждый раз
         const messagesDiv = document.getElementById('chat-messages');
         const chatWithSpan = document.getElementById('chat-with');
-        const activeTransfers = new Map();
+        const typingDiv = document.getElementById('typing-indicator');
+        const activeTransfers = new Map(); // Активные передачи файлов
+        const peers = {}; // Кэш пиров
+
+        /**
+         * Установка WebSocket соединения.
+         * Используем wss если HTTPS, иначе ws.
+         * При закрытии - пытаемся переподключиться через 3 секунды.
+         * 
+         * Это fallback механизм - если WebSocket не работает, клиент не умрёт.
+         */
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(protocol + '//' + window.location.host + '/ws');
+            
+            ws.onopen = () => {
+                document.getElementById('connection-status').textContent = 'Connected';
+                document.getElementById('connection-status').style.color = '#4CAF50';
+            };
+            
+            ws.onclose = () => {
+                document.getElementById('connection-status').textContent = 'Disconnected - Reconnecting...';
+                document.getElementById('connection-status').style.color = '#e94560';
+                setTimeout(connectWebSocket, 3000);
+            };
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'MESSAGE') {
+                    handleWsMessage(data.message);
+                } else if (data.type === 'DELIVERED') {
+                    markDelivered(data.messageId);
+                } else if (data.type === 'TYPING') {
+                    if (data.peerId === currentChat) {
+                        typingDiv.textContent = peers[data.peerId]?.name || 'Someone' + ' is typing...';
+                    }
+                } else if (data.type === 'TYPING_STOPPED') {
+                    typingDiv.textContent = '';
+                } else if (data.type === 'AUTH_REQUEST') {
+                    showAuthModal(data.peerId, data.peerName, data.token);
+                } else if (data.type === 'AUTH_RESPONSE') {
+                    if (data.approved) {
+                        showNotification('Peer trusted successfully');
+                        refreshPeers();
+                    } else {
+                        showNotification('Auth request rejected');
+                    }
+                }
+            };
+        }
+
+        let pendingAuthToken = null;
+        let pendingAuthPeerId = null;
+
+        function showAuthModal(peerId, peerName, token) {
+            pendingAuthToken = token;
+            pendingAuthPeerId = peerId;
+            document.getElementById('auth-peer-name').textContent = peerName;
+            document.getElementById('auth-modal').style.display = 'flex';
+        }
+
+        async function acceptAuth() {
+            const secret = document.getElementById('auth-secret-input').value;
+            if (!secret) return alert('Enter secret');
+            
+            await fetch('/api/auth/respond', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ peerId: pendingAuthPeerId, token: pendingAuthToken, approved: true })
+            });
+            
+            document.getElementById('auth-modal').style.display = 'none';
+            document.getElementById('auth-secret-input').value = '';
+        }
+
+        async function rejectAuth() {
+            await fetch('/api/auth/respond', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ peerId: pendingAuthPeerId, token: pendingAuthToken, approved: false })
+            });
+            
+            document.getElementById('auth-modal').style.display = 'none';
+            document.getElementById('auth-secret-input').value = '';
+        }
+
+        async function requestAuth(peerId) {
+            const secret = prompt('Enter shared secret to authenticate with peer:');
+            if (!secret || secret.length < 4) {
+                alert('Secret must be at least 4 characters');
+                return;
+            }
+            
+            const res = await fetch('/api/auth/request', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ peerId: peerId, secret: secret })
+            });
+            const data = await res.json();
+            
+            if (data.error) {
+                alert(data.error);
+            } else {
+                showNotification('Auth request sent');
+            }
+        }
+
+        function handleWsMessage(msg) {
+            if (msg.senderId === currentChat) {
+                addMessage(msg.senderName, msg.content, msg.time || '', false, msg.fileId, msg.fileName, msg.fileType, msg.fileSize);
+            } else {
+                showNotification('Message from ' + msg.senderName);
+            }
+            if (msg.id) {
+                fetch('/api/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type: 'MESSAGE', senderId: myId, senderName: myName, targetId: msg.senderId, content: msg.content, id: msg.id })
+                }).catch(() => {});
+            }
+        }
+
+        function markDelivered(msgId) {
+            deliveredMessages.add(msgId);
+            document.querySelectorAll('.message.mine .time').forEach(el => {
+                if (!el.textContent.includes('✓')) {
+                    el.textContent = el.textContent.replace(/(\d{2}:\d{2})/, '$1 ✓');
+                }
+            });
+        }
 
         async function start() {
             myName = document.getElementById('username').value.trim();
@@ -110,6 +280,7 @@
             document.getElementById('my-port').textContent = myPort;
             document.getElementById('setup').style.display = 'none';
 
+            connectWebSocket();
             pollInterval = setInterval(pollAll, 500);
             refreshPeers();
             setInterval(refreshPeers, 3000);
@@ -137,8 +308,11 @@
 
         async function refreshPeers() {
             const res = await fetch('/api/peers');
-            const peers = await res.json();
-            const peerArray = Object.values(peers).filter(p => p.id !== myId && p.name !== 'Unknown');
+            const peersData = await res.json();
+            Object.values(peersData).forEach(p => {
+                peers[p.id] = p;
+            });
+            const peerArray = Object.values(peersData).filter(p => p.id !== myId && p.name !== 'Unknown');
             
             const list = document.getElementById('peer-list');
             if (peerArray.length === 0) {
@@ -148,8 +322,12 @@
             
             list.innerHTML = peerArray.map(p => `
                 <div class="peer ${currentChat === p.id ? 'active' : ''}" onclick="selectChat('${p.id}', '${escapeHtml(p.name)}')">
-                    <div class="peer-name">${escapeHtml(p.name)}</div>
+                    <div class="peer-name">
+                        <span class="peer-status online"></span>${escapeHtml(p.name)}
+                        ${p.trusted ? '<span class="trusted-badge">Trusted</span>' : ''}
+                    </div>
                     <div class="peer-id">${p.id} @ ${p.address}:${p.port}</div>
+                    ${!p.trusted ? '<button style="margin-top:5px;padding:3px 8px;background:#4CAF50;color:white;border:none;border-radius:3px;cursor:pointer;font-size:10px" onclick="event.stopPropagation();requestAuth(\''+p.id+'\')">Trust</button>' : ''}
                 </div>
             `).join('');
         }
@@ -193,14 +371,32 @@
 
             const time = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
 
-            await fetch('/api/send', {
+            const res = await fetch('/api/send', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ type: 'MESSAGE', senderId: myId, senderName: myName, targetId: currentChat, content: text, time: time })
             });
+            const data = await res.json();
+            const msgId = data?.id || Date.now().toString();
 
-            addMessage(myName, text, time, true);
+            addMessage(myName, text, time, true, null, null, null, null, msgId);
             input.value = '';
+            
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'TYPING_STOPPED', targetId: currentChat }));
+            }
+        }
+
+        function onInputFocus() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'TYPING', targetId: currentChat }));
+            }
+            clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(() => {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'TYPING_STOPPED', targetId: currentChat }));
+                }
+            }, 2000);
         }
 
         async function handleFileSelect(event) {
@@ -256,9 +452,10 @@
             event.target.value = '';
         }
 
-        function addMessage(sender, text, time, isMine, fileId, fileName, fileType, fileSize) {
+        function addMessage(sender, text, time, isMine, fileId, fileName, fileType, fileSize, msgId) {
             const div = document.createElement('div');
             div.className = 'message ' + (isMine ? 'mine' : 'other');
+            if (msgId) div.dataset.msgId = msgId;
             
             let fileHtml = '';
             if (fileId) {
@@ -269,16 +466,40 @@
                 </div>`;
             }
 
-            div.innerHTML = `${!isMine ? '<div class="sender">'+escapeHtml(sender)+'</div>' : ''}<div>${escapeHtml(text)}</div>${fileHtml}<div class="time">${time}</div>`;
+            const checkMark = isMine ? ' ✓' : '';
+            div.innerHTML = `${!isMine ? '<div class="sender">'+escapeHtml(sender)+'</div>' : ''}<div>${escapeHtml(text)}</div>${fileHtml}<div class="time">${time}${checkMark}</div>`;
             messagesDiv.appendChild(div);
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
 
         function closeChat() {
             currentChat = null;
+            typingDiv.textContent = '';
             document.getElementById('chat-panel').style.display = 'none';
+            document.getElementById('search-box').style.display = 'none';
             messagesDiv.innerHTML = '';
             refreshPeers();
+        }
+
+        function toggleSearch() {
+            const box = document.getElementById('search-box');
+            box.style.display = box.style.display === 'none' ? 'flex' : 'none';
+        }
+
+        async function searchMessages() {
+            const query = document.getElementById('search-input').value.trim();
+            if (!query || !currentChat) return;
+            
+            const res = await fetch('/api/search?q=' + encodeURIComponent(query));
+            const messages = await res.json();
+            
+            messagesDiv.innerHTML = '<div style="padding:10px;color:#888">Search results:</div>';
+            messages.filter(m => m.peerId === currentChat).forEach(m => 
+                addMessage(m.senderName, m.content, formatTime(m.timestamp), m.senderId === myId, m.fileId, m.fileName, m.fileType, m.fileSize)
+            );
+            if (messages.filter(m => m.peerId === currentChat).length === 0) {
+                messagesDiv.innerHTML += '<div style="padding:10px;color:#888">No results found.</div>';
+            }
         }
 
         function showNotification(text) {

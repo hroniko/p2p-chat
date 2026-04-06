@@ -74,6 +74,14 @@ public class DatabaseService {
         return messages.get(messages.size() - 1).getTimestamp();
     }
 
+    public List<MessageDto> searchMessages(String query) {
+        return messageRepository.findAll()
+                .stream()
+                .filter(m -> m.getContent() != null && m.getContent().toLowerCase().contains(query.toLowerCase()))
+                .map(MessageDto::fromEntity)
+                .collect(Collectors.toList());
+    }
+
     public static class MessageDto {
         public String id;
         public String peerId;
