@@ -8,6 +8,7 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -507,6 +508,9 @@ public class P2PNetworkService {
         }
     }
 
+    @Autowired
+    private ParallelFileTransferService parallelTransferService;
+
     public void sendFile(String targetId, String fileId, String fileName, long fileSize, String filePath) {
         Peer peer = discoveredPeers.get(targetId);
         if (peer == null) {
@@ -522,7 +526,38 @@ public class P2PNetworkService {
 
         String transferId = UUID.randomUUID().toString();
         log.info("Starting file transfer: {} ({} bytes)", filePath, fileSize);
-        
+
+        // Для больших файлов используем параллельную передачу
+        if (fileSize >= 100 * 1024 * 1024) { // 100MB+
+            parallelTransferService.transferFile(
+                peer.getAddress(),
+                peer.getPort(),
+                fullPath.toString(),
+                transferId,
+                fileId,
+                fileName,
+                fileSize,
+                new ParallelFileTransferService.ProgressCallback() {
+                    @Override
+                    public void onProgress(long transferred, long total) {
+                        for (FileTransferListener listener : fileListeners) {
+                            listener.onProgress(transferId, transferred, total);
+                        }
+                    }
+
+                    @Override
+                    public void onComplete(long total) {
+                        for (FileTransferListener listener : fileListeners) {
+                            listener.onComplete(transferId, fileName, total);
+                        }
+                        log.info("Parallel file transfer complete: {}", fileName);
+                    }
+                }
+            );
+            return;
+        }
+
+        // Для маленьких файлов - старая однопоточная логика
         executor.submit(() -> {
             RandomAccessFile raf = null;
             Socket socket = null;
@@ -693,6 +728,9 @@ public class P2PNetworkService {
             transferExecutor.awaitTermination(5, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+        }
+        if (parallelTransferService != null) {
+            parallelTransferService.shutdown();
         }
     }
 

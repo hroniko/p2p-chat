@@ -27,3 +27,8 @@ chat:
     port: 45678
   p2p:
     port: 9090
+  transfer:
+    streams: 8
+    buffer-size: 1048576
+    queue-size: 32
+    min-file-size: 104857600
