@@ -25,15 +25,19 @@ src/main/java/com/chat/p2p/
 ├── controller/
 │   ├── ChatController.java      # REST API контроллер
 │   ├── FileController.java     # API для файлов
-│   └── ClientController.java
 ├── service/
 │   ├── P2PNetworkService.java  # Ядро P2P сети
 │   ├── DatabaseService.java     # Работа с БД
-│   └── ParallelFileTransferService.java # Параллельная передача файлов
+│   ├── ParallelFileTransferService.java # Параллельная передача файлов
+│   ├── EncryptionService.java   # E2E шифрование
+│   ├── OfflineMessageService.java # Оффлайн сообщения
+│   ├── GroupService.java       # Групповые чаты
+│   └── CallService.java        # Voice/Video звонки
 ├── model/
 │   ├── P2PMessage.java         # Модель сообщения
 │   ├── Peer.java                # Модель пира
-│   └── DiscoveryMessage.java     # Сообщение для discovery
+│   ├── Group.java               # Модель группы
+│   └── DiscoveryMessage.java    # Сообщение для discovery
 ├── entity/
 │   ├── MessageEntity.java       # Сущность сообщения в БД
 │   └── FileEntity.java          # Сущность файла в БД
@@ -48,13 +52,13 @@ src/main/java/com/chat/p2p/
 - **UDP Broadcast** (порт 45678) - рассылка "я здесь" каждые 3 секунды
 - **TCP Server** (порт 9090) - приём входящих соединений
 - **Peer Discovery** - автоматическое обнаружение пиров в сети
-- **Connection Management** - управление TCP соединениями
 
 ### 2. Сообщения
 - Real-time доставка через WebSocket
 - Подтверждение доставки (msg type 2)
 - Индикация "печатает..." (msg type 3, 4)
-- ID сообщения для трекинга
+- **E2E шифрование** - AES-256-GCM для trusted пиров
+- **Оффлайн сообщения** - сохраняются и отправляются при возвращении пира
 
 ### 3. Файловая передача
 - **Параллельная передача** (файлы >10MB):
@@ -62,15 +66,24 @@ src/main/java/com/chat/p2p/
   - Direct ByteBuffer (off-heap память)
   - 2MB буферы
   - Producer-Consumer архитектура
-- **Однопоточная передача** (файлы <10MB)
-- Прогресс-бар в реальном времени
+- **Возобновление** - при разрыве можно продолжить с места остановки
 
 ### 4. Безопасность
 - TLS/SSL (HTTPS) - самоподписанный сертификат
 - Аутентификация пиров через shared secret (msg type 5, 6)
 - Rate limiting (60 запросов/мин)
+- E2E шифрование сообщений
 
-### 5. REST API
+### 5. Групповые чаты
+- Создание групп
+- Добавление/удаление участников
+- P2P ретрансляция сообщений
+
+### 6. Voice/Video звонки
+- WebRTC совместимая сигнализация
+- SDP и ICE candidates через P2P сеть
+
+### 7. REST API
 - `GET /api/info` - информация о пире
 - `GET /api/peers` - список пиров
 - `POST /api/send` - отправить сообщение
@@ -79,8 +92,10 @@ src/main/java/com/chat/p2p/
 - `POST /api/auth/request` - запрос авторизации
 - `POST /api/auth/respond` - ответ на авторизацию
 - `GET /api/search` - поиск по сообщениям
+- `POST /api/groups/create` - создать группу
+- `GET /api/groups` - список групп
 
-### 6. Протокол сообщений (TCP)
+### 8. Протокол сообщений (TCP)
 | Type | Назначение |
 |------|------------|
 | 0 | Текстовое сообщение (JSON) |
@@ -97,15 +112,10 @@ src/main/java/com/chat/p2p/
 ```yaml
 server:
   port: 8089
-  ssl:
-    enabled: false  # Отключен для разработки
 
 spring:
   datasource:
     url: jdbc:sqlite:chat.db
-  jpa:
-    hibernate:
-      ddl-auto: update
 
 chat:
   discovery:
@@ -113,9 +123,9 @@ chat:
   p2p:
     port: 9090
   transfer:
-    streams: 8          # Количество TCP потоков
-    buffer-size: 2097152 # 2MB буфер
-    min-file-size: 10485760 # 10MB порог
+    streams: 8
+    buffer-size: 2097152
+    min-file-size: 10485760
 ```
 
 ## Запуск
@@ -142,8 +152,12 @@ mvn spring-boot:run
 
 ## TODO/Улучшения
 
-- [ ] Сквозное шифрование сообщений
-- [ ] История сообщений для оффлайн пиров
-- [ ] Возобновляемые передачи файлов при разрыве
-- [ ] Поддержка групповых чатов
-- [ ] voice/video calls
+- [x] Сквозное шифрование сообщений
+- [x] История сообщений для оффлайн пиров
+- [x] Возобновляемые передачи файлов при разрыве
+- [x] Поддержка групповых чатов
+- [x] Voice/video calls
+
+## Версия
+
+Проект постоянно развивается. Последнее обновление: 2026-04-07

@@ -1,9 +1,11 @@
 package com.chat.p2p.controller;
 
+import com.chat.p2p.model.Group;
 import com.chat.p2p.model.Peer;
 import com.chat.p2p.model.P2PMessage;
 import com.chat.p2p.repository.FileRepository;
 import com.chat.p2p.service.DatabaseService;
+import com.chat.p2p.service.GroupService;
 import com.chat.p2p.service.P2PNetworkService;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
@@ -42,6 +44,9 @@ public class ChatController {
 
     @Autowired
     private FileRepository fileRepository;
+    
+    @Autowired
+    private GroupService groupService;
 
     private final List<P2PMessage> pendingMessages = Collections.synchronizedList(new ArrayList<>());
     private final List<FileTransferProgress> transferProgress = Collections.synchronizedList(new ArrayList<>());
@@ -277,6 +282,49 @@ public class ChatController {
     @GetMapping("/api/peers/trusted")
     public Map<String, Peer> getTrustedPeers() {
         return networkService.getTrustedPeers();
+    }
+
+    // === Групповые чаты ===
+
+    @PostMapping("/api/groups/create")
+    public Map<String, Object> createGroup(@RequestBody Map<String, String> request) {
+        String name = request.get("name");
+        String creatorId = networkService.getPeerId();
+        
+        Group group = groupService.createGroup(name, creatorId);
+        
+        return Map.of(
+            "groupId", group.getId(),
+            "name", group.getName(),
+            "members", group.getMembers()
+        );
+    }
+
+    @GetMapping("/api/groups")
+    public List<Group> getGroups() {
+        return groupService.getLocalGroups();
+    }
+
+    @GetMapping("/api/groups/{groupId}")
+    public Group getGroup(@PathVariable String groupId) {
+        return groupService.getGroup(groupId);
+    }
+
+    @PostMapping("/api/groups/{groupId}/join")
+    public Map<String, Object> joinGroup(@PathVariable String groupId, @RequestBody Group group) {
+        groupService.joinGroup(group);
+        return Map.of("status", "joined");
+    }
+
+    @PostMapping("/api/groups/{groupId}/members")
+    public void addMember(@PathVariable String groupId, @RequestBody Map<String, String> request) {
+        String peerId = request.get("peerId");
+        groupService.addMember(groupId, peerId);
+    }
+
+    @DeleteMapping("/api/groups/{groupId}/members/{peerId}")
+    public void removeMember(@PathVariable String groupId, @PathVariable String peerId) {
+        groupService.removeMember(groupId, peerId);
     }
 
     public static class FileTransferProgress {

@@ -9,6 +9,7 @@ public class P2PMessage {
     private String senderName;
     private String targetId;
     private String content;
+    private String encryptedContent; // E2E зашифрованный контент
     private String fileId;
     private String fileName;
     private String fileType;
@@ -43,6 +44,9 @@ public class P2PMessage {
 
     public String getContent() { return content; }
     public void setContent(String content) { this.content = content; }
+
+    public String getEncryptedContent() { return encryptedContent; }
+    public void setEncryptedContent(String encryptedContent) { this.encryptedContent = encryptedContent; }
 
     public String getFileId() { return fileId; }
     public void setFileId(String fileId) { this.fileId = fileId; }

@@ -59,9 +59,18 @@ public class P2PNetworkService {
     private final Map<String, Connection> connections = new ConcurrentHashMap<>(); // Активные TCP соединения
     private final Map<String, AuthRequest> pendingAuthRequests = new ConcurrentHashMap<>(); // Ожидающие авторизации
     private final Set<String> trustedPeers = ConcurrentHashMap.newKeySet(); // Белый список. Свой в доску
+    private final Map<String, String> peerSecrets = new ConcurrentHashMap<>(); // Shared secrets для шифрования
+    
+    private EncryptionService encryptionService; // E2E шифрование
+    
     private final ExecutorService executor = Executors.newCachedThreadPool(); // Потоковый пул общего назначения
     private final ExecutorService transferExecutor = Executors.newFixedThreadPool(TRANSFER_THREADS); // Пул для файлов - 8 потоков, не больше
     private final CopyOnWriteArrayList<NetworkListener> listeners = new CopyOnWriteArrayList<>(); // Слушатели сообщений
+    
+    @Autowired
+    public void setEncryptionService(EncryptionService encryptionService) {
+        this.encryptionService = encryptionService;
+    }
     private final CopyOnWriteArrayList<FileTransferListener> fileListeners = new CopyOnWriteArrayList<>(); // Слушатели файлов
 
     @PostConstruct
@@ -170,6 +179,21 @@ public class P2PNetworkService {
                 if (msgType == 0) {
                     String line = dis.readUTF();
                     P2PMessage msg = objectMapper.readValue(line, P2PMessage.class);
+                    
+                    // E2E дешифрование
+                    if (msg.getEncryptedContent() != null && !msg.getEncryptedContent().isEmpty()) {
+                        String senderId = msg.getSenderId();
+                        String secret = peerSecrets.get(senderId);
+                        if (secret != null) {
+                            String decrypted = encryptionService.decryptFromBase64(senderId, msg.getEncryptedContent());
+                            if (decrypted != null) {
+                                msg.setContent(decrypted);
+                                msg.setEncryptedContent(null);
+                                log.debug("Message decrypted from: {}", senderId);
+                            }
+                        }
+                    }
+                    
                     log.info("Message received: {} from {}", msg.getType(), msg.getSenderId());
                     for (NetworkListener listener : listeners) {
                         listener.onMessageReceived(msg);
@@ -387,6 +411,17 @@ public class P2PNetworkService {
         if (peer == null) {
             log.warn("Peer not found: {}", targetId);
             return;
+        }
+
+        // E2E шифрование для trusted пиров
+        String secret = peerSecrets.get(targetId);
+        if (secret != null && message.getContent() != null) {
+            String encrypted = encryptionService.encryptToBase64(targetId, message.getContent());
+            if (encrypted != null) {
+                message.setEncryptedContent(encrypted);
+                message.setContent(null); // Очищаем оригинальный контент
+                log.debug("Message encrypted for trusted peer: {}", targetId);
+            }
         }
 
         String key = peer.getAddress() + ":" + peer.getPort();
@@ -709,6 +744,14 @@ public class P2PNetworkService {
                 trustedPeers.add(peerId);
                 peer.setTrusted(true);
                 peer.setAuthToken(token);
+                
+                // Сохраняем shared secret для E2E шифрования
+                AuthRequest authReq = pendingAuthRequests.get(peerId + ":" + token);
+                if (authReq != null) {
+                    peerSecrets.put(peerId, authReq.secret);
+                    encryptionService.setPeerKey(peerId, authReq.secret);
+                    pendingAuthRequests.remove(peerId + ":" + token);
+                }
             }
             
             log.info("Auth response sent to {}: {}", peerId, approved ? "approved" : "rejected");

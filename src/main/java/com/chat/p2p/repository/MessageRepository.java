@@ -12,4 +12,6 @@ public interface MessageRepository extends JpaRepository<MessageEntity, String> 
     List<MessageEntity> findByPeerIdAndTimestampGreaterThanOrderByTimestampAsc(String peerId, java.time.LocalDateTime timestamp);
     long countByPeerId(String peerId);
     long countByPeerIdAndSynced(String peerId, boolean synced);
+    List<MessageEntity> findByPeerIdAndDeliveredFalse(String peerId);
+    long countByPeerIdAndDeliveredFalse(String peerId);
 }

@@ -33,6 +33,9 @@ public class MessageEntity {
     
     @Column(name = "synced")
     private boolean synced;
+    
+    @Column(name = "delivered")
+    private boolean delivered;
 
     public MessageEntity() {
         this.id = UUID.randomUUID().toString();
@@ -64,4 +67,7 @@ public class MessageEntity {
 
     public boolean isSynced() { return synced; }
     public void setSynced(boolean synced) { this.synced = synced; }
+
+    public boolean isDelivered() { return delivered; }
+    public void setDelivered(boolean delivered) { this.delivered = delivered; }
 }
