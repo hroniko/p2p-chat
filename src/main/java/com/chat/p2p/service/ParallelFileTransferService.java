@@ -1,5 +1,6 @@
 package com.chat.p2p.service;
 
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -18,7 +19,6 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Сервис параллельной передачи файлов с поддержкой возобновления.
- * Вдохновлён FDT.
  */
 @Service
 public class ParallelFileTransferService {
@@ -33,17 +33,17 @@ public class ParallelFileTransferService {
     @Value("${chat.transfer.min-file-size:10485760}")
     private long minFileSizeForParallel;
 
-    /** Карта активных передач */
     private final ConcurrentHashMap<String, TransferState> activeTransfers = new ConcurrentHashMap<>();
-
-    private final ExecutorService executor;
-    private final DirectBufferPool bufferPool;
+    private ExecutorService executor;
+    private DirectBufferPool bufferPool;
 
     public ParallelFileTransferService() {
-        int threads = Runtime.getRuntime().availableProcessors() * 2;
-        
+    }
+
+    @PostConstruct
+    public void init() {
         this.executor = Executors.newFixedThreadPool(
-            threads + numStreams,
+            Runtime.getRuntime().availableProcessors() * 2 + 8,
             r -> {
                 Thread t = new Thread(r);
                 t.setPriority(Thread.MAX_PRIORITY);
@@ -51,8 +51,8 @@ public class ParallelFileTransferService {
                 return t;
             }
         );
-
         this.bufferPool = new DirectBufferPool(numStreams * 8, bufferSize);
+        log.info("ParallelFileTransferService initialized: streams={}, buffer={}", numStreams, bufferSize);
     }
 
     public static class TransferState {
@@ -68,9 +68,6 @@ public class ParallelFileTransferService {
         }
     }
 
-    /**
-     * Параллельная передача файла с поддержкой возобновления.
-     */
     public void transferFile(
             String peerAddress,
             int peerPort,
@@ -89,8 +86,7 @@ public class ParallelFileTransferService {
         TransferState state = activeTransfers.computeIfAbsent(transferId, TransferState::new);
         long startOffset = state.transferred;
         
-        log.info("Starting/resuming transfer {} from {} of {} bytes", 
-            transferId, startOffset, fileSize);
+        log.info("Starting/resuming transfer {} from {} of {} bytes", transferId, startOffset, fileSize);
 
         AtomicLong transferred = new AtomicLong(startOffset);
         long remaining = fileSize - startOffset;
@@ -156,12 +152,8 @@ public class ParallelFileTransferService {
                 });
             }
 
-            // Ждём завершения
-            long startTime = System.currentTimeMillis();
             while (state.running.get() && transferred.get() < fileSize) {
                 Thread.sleep(100);
-                
-                // Таймаут 30 сек - можно возобновить
                 if (System.currentTimeMillis() - state.lastUpdate > 30000) {
                     log.warn("Transfer paused at {} bytes", transferred.get());
                     break;
@@ -197,7 +189,7 @@ public class ParallelFileTransferService {
     public void shutdown() {
         activeTransfers.values().forEach(t -> t.running.set(false));
         executor.shutdown();
-        bufferPool.close();
+        if (bufferPool != null) bufferPool.close();
     }
 
     public interface ProgressCallback {
