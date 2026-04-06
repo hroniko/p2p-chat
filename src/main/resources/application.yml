@@ -4,17 +4,16 @@ server:
     max-http-form-post-size: 10000MB
     max-swallow-size: 10000MB
   ssl:
-    enabled: true
-    key-store: classpath:keystore.p12
-    key-store-password: changeit
-    key-store-type: PKCS12
+    enabled: false
 
 spring:
   datasource:
     url: jdbc:sqlite:chat.db
     driver-class-name: org.sqlite.JDBC
   jpa:
-    database-platform: org.hibernate.community.dialect.SQLiteDialect
+    properties:
+      hibernate:
+        dialect: com.chat.p2p.config.SQLiteDialect
     hibernate:
       ddl-auto: update
     show-sql: false
