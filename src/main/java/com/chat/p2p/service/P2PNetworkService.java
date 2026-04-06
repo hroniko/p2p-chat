@@ -527,14 +527,15 @@ public class P2PNetworkService {
         String transferId = UUID.randomUUID().toString();
         log.info("Starting file transfer: {} ({} bytes)", filePath, fileSize);
 
-        // Для больших файлов используем параллельную передачу
-        if (fileSize >= 100 * 1024 * 1024) { // 100MB+
+        // Для больших файлов используем параллельную передачу (>10MB)
+        if (fileSize >= 10 * 1024 * 1024) {
             parallelTransferService.transferFile(
                 peer.getAddress(),
                 peer.getPort(),
                 fullPath.toString(),
                 transferId,
                 fileId,
+                peerId,
                 fileName,
                 fileSize,
                 new ParallelFileTransferService.ProgressCallback() {
@@ -550,7 +551,12 @@ public class P2PNetworkService {
                         for (FileTransferListener listener : fileListeners) {
                             listener.onComplete(transferId, fileName, total);
                         }
-                        log.info("Parallel file transfer complete: {}", fileName);
+                        log.info("PARALLEL file transfer complete: {} ({} bytes)", fileName, total);
+                    }
+
+                    @Override
+                    public void onError(String error) {
+                        log.error("Parallel transfer failed: {}", error);
                     }
                 }
             );

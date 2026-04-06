@@ -29,6 +29,7 @@ chat:
     port: 9090
   transfer:
     streams: 8
-    buffer-size: 1048576
-    queue-size: 32
-    min-file-size: 104857600
+    buffer-size: 2097152
+    queue-size: 64
+    min-file-size: 10485760
+    read-threads: 0
