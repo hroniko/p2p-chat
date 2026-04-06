@@ -1,0 +1,21 @@
+server:
+  port: 8089
+  tomcat:
+    max-http-form-post-size: 10000MB
+    max-swallow-size: 10000MB
+
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+  servlet:
+    multipart:
+      max-file-size: 10000MB
+      max-request-size: 10000MB
+
+chat:
+  discovery:
+    port: 45678
+  p2p:
+    port: 9090

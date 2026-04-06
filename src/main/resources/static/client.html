@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>P2P Chat</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: Arial, sans-serif; background: #1a1a2e; color: #eee; height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        h1 { margin-bottom: 10px; color: #4CAF50; }
+        #setup { margin-bottom: 20px; text-align: center; }
+        #setup input { padding: 10px; border: none; border-radius: 5px; width: 200px; margin-right: 10px; }
+        #setup button { padding: 10px 20px; border: none; border-radius: 5px; background: #4CAF50; color: white; cursor: pointer; }
+        #info { font-size: 12px; color: #888; margin-bottom: 20px; }
+        .container { display: flex; gap: 20px; width: 100%; max-width: 900px; height: calc(100vh - 150px); }
+        .panel { flex: 1; background: #16213e; border-radius: 10px; display: flex; flex-direction: column; overflow: hidden; }
+        .panel-header { padding: 15px; background: #0f3460; font-weight: bold; }
+        .peer-list { flex: 1; overflow-y: auto; }
+        .peer { padding: 12px 15px; cursor: pointer; border-bottom: 1px solid #0f3460; }
+        .peer:hover { background: #1a1a4e; }
+        .peer.active { background: #2a2a5e; border-left: 3px solid #4CAF50; }
+        .peer-name { font-weight: bold; }
+        .peer-id { font-size: 10px; color: #666; }
+        #chat-panel { display: none; flex-direction: column; }
+        #chat-header { padding: 15px; background: #0f3460; display: flex; justify-content: space-between; align-items: center; }
+        #chat-header button { padding: 5px 10px; border: none; border-radius: 5px; background: #e94560; color: white; cursor: pointer; }
+        #chat-messages { flex: 1; padding: 15px; overflow-y: auto; }
+        .message { margin-bottom: 10px; padding: 8px 12px; border-radius: 8px; max-width: 85%; word-break: break-word; }
+        .message.mine { background: #4CAF50; margin-left: auto; }
+        .message.other { background: #0f3460; }
+        .message .sender { font-size: 11px; color: #aaa; margin-bottom: 2px; }
+        .message .time { font-size: 10px; color: #888; text-align: right; margin-top: 2px; }
+        .file-msg { background: #0a0a1a; padding: 8px; border-radius: 5px; margin-top: 5px; display: flex; align-items: center; gap: 10px; cursor: pointer; }
+        .file-msg:hover { background: #1a1a3a; }
+        .file-msg img { width: 80px; height: 80px; object-fit: cover; border-radius: 3px; }
+        .file-msg .icon { font-size: 32px; }
+        .file-msg .info { flex: 1; }
+        .file-msg .name { color: #4CAF50; font-size: 12px; }
+        .file-msg .size { color: #888; font-size: 10px; }
+        #chat-input { padding: 10px; background: #0f3460; display: flex; gap: 10px; align-items: center; }
+        #chat-input input { flex: 1; padding: 10px; border: none; border-radius: 5px; background: #1a1a2e; color: #eee; }
+        #chat-input button, #attach-btn { padding: 10px 15px; border: none; border-radius: 5px; background: #4CAF50; color: white; cursor: pointer; font-size: 16px; }
+        #attach-btn { background: #0f3460; padding: 10px 12px; }
+        #file-input { display: none; }
+        .transfer-modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; z-index: 1000; }
+        .transfer-box { background: #16213e; padding: 30px; border-radius: 10px; text-align: center; min-width: 300px; }
+        .transfer-box .progress { width: 100%; height: 10px; background: #0a0a1a; border-radius: 5px; margin: 15px 0; overflow: hidden; }
+        .transfer-box .progress div { height: 100%; background: #4CAF50; transition: width 0.3s; }
+        #notification { position: fixed; bottom: 20px; right: 20px; background: #0f3460; padding: 15px 20px; border-radius: 8px; display: none; border-left: 4px solid #4CAF50; }
+    </style>
+</head>
+<body>
+    <h1>P2P Chat</h1>
+    <div id="setup">
+        <input type="text" id="username" placeholder="Your name" maxlength="20">
+        <button onclick="start()">Start</button>
+    </div>
+    <div id="info">Your ID: <span id="my-id">-</span> | P2P Port: <span id="my-port">-</span></div>
+    
+    <div class="container">
+        <div class="panel" id="peers-panel">
+            <div class="panel-header">Peers in Network</div>
+            <div class="peer-list" id="peer-list"><div class="empty-state">Searching for peers...</div></div>
+        </div>
+        
+        <div class="panel" id="chat-panel">
+            <div id="chat-header">
+                <span>Chat with <span id="chat-with">-</span></span>
+                <button onclick="closeChat()">Close</button>
+            </div>
+            <div id="chat-messages"></div>
+            <div id="chat-input">
+                <input type="file" id="file-input" onchange="handleFileSelect(event)">
+                <button id="attach-btn" onclick="document.getElementById('file-input').click()">+</button>
+                <input type="text" id="messageInput" placeholder="Type a message..." onkeypress="if(event.key==='Enter')sendMessage()">
+                <button onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="transfer-modal" id="transfer-modal">
+        <div class="transfer-box">
+            <div id="transfer-name">Transferring...</div>
+            <div class="progress"><div id="transfer-progress" style="width:0%"></div></div>
+            <div id="transfer-status">0%</div>
+        </div>
+    </div>
+    <div id="notification"></div>
+
+    <script>
+        let myId, myPort, myName;
+        let currentChat = null;
+        let pollInterval;
+        const messagesDiv = document.getElementById('chat-messages');
+        const chatWithSpan = document.getElementById('chat-with');
+        const activeTransfers = new Map();
+
+        async function start() {
+            myName = document.getElementById('username').value.trim();
+            if (!myName) return alert('Enter your name');
+
+            const res = await fetch('/api/info');
+            const info = await res.json();
+            myId = info.peerId;
+            myPort = info.p2pPort;
+
+            await fetch('/api/set-name?name=' + encodeURIComponent(myName), { method: 'POST' });
+
+            document.getElementById('my-id').textContent = myId;
+            document.getElementById('my-port').textContent = myPort;
+            document.getElementById('setup').style.display = 'none';
+
+            pollInterval = setInterval(pollAll, 500);
+            refreshPeers();
+            setInterval(refreshPeers, 3000);
+        }
+
+        async function pollAll() {
+            pollMessages();
+            pollTransfers();
+        }
+
+        async function pollTransfers() {
+            try {
+                const res = await fetch('/api/transfer-progress');
+                const transfers = await res.json();
+                transfers.forEach(t => {
+                    const percent = Math.round((t.received / t.total) * 100);
+                    if (t.complete) {
+                        hideTransfer(t.transferId);
+                    } else {
+                        showTransfer(t.transferId, 'File Transfer', percent);
+                    }
+                });
+            } catch(e) {}
+        }
+
+        async function refreshPeers() {
+            const res = await fetch('/api/peers');
+            const peers = await res.json();
+            const peerArray = Object.values(peers).filter(p => p.id !== myId && p.name !== 'Unknown');
+            
+            const list = document.getElementById('peer-list');
+            if (peerArray.length === 0) {
+                list.innerHTML = '<div class="empty-state">No peers found.<br>Start another instance on your network.</div>';
+                return;
+            }
+            
+            list.innerHTML = peerArray.map(p => `
+                <div class="peer ${currentChat === p.id ? 'active' : ''}" onclick="selectChat('${p.id}', '${escapeHtml(p.name)}')">
+                    <div class="peer-name">${escapeHtml(p.name)}</div>
+                    <div class="peer-id">${p.id} @ ${p.address}:${p.port}</div>
+                </div>
+            `).join('');
+        }
+
+        function selectChat(peerId, peerName) {
+            currentChat = peerId;
+            chatWithSpan.textContent = peerName;
+            document.getElementById('chat-panel').style.display = 'flex';
+            messagesDiv.innerHTML = '';
+            loadHistory();
+            refreshPeers();
+        }
+
+        async function loadHistory() {
+            if (!currentChat) return;
+            const res = await fetch('/api/messages/' + currentChat);
+            const messages = await res.json();
+            messagesDiv.innerHTML = '';
+            messages.forEach(m => addMessage(m.senderName, m.content, formatTime(m.timestamp), m.senderId === myId, m.fileId, m.fileName, m.fileType, m.fileSize));
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        async function pollMessages() {
+            try {
+                const res = await fetch('/api/pending-messages');
+                const messages = await res.json();
+                messages.forEach(msg => {
+                    if (msg.senderId === currentChat) {
+                        addMessage(msg.senderName, msg.content, msg.time || '', false, msg.fileId, msg.fileName, msg.fileType, msg.fileSize);
+                    } else {
+                        showNotification('Message from ' + msg.senderName);
+                    }
+                });
+            } catch(e) {}
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const text = input.value.trim();
+            if (!text || !currentChat) return;
+
+            const time = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+
+            await fetch('/api/send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: 'MESSAGE', senderId: myId, senderName: myName, targetId: currentChat, content: text, time: time })
+            });
+
+            addMessage(myName, text, time, true);
+            input.value = '';
+        }
+
+        async function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file || !currentChat) return;
+
+            const transferId = Math.random().toString(36).substr(2, 9);
+            showTransfer(transferId, file.name, 0);
+
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('peerId', currentChat);
+                formData.append('senderId', myId);
+
+                const response = await fetch('/api/files/upload', { method: 'POST', body: formData });
+                const result = await response.json();
+
+                const infoRes = await fetch('/api/files/' + result.fileId + '/info');
+                const fileInfo = await infoRes.json();
+
+                await fetch('/api/send-file', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        targetId: currentChat,
+                        fileId: result.fileId,
+                        fileName: file.name,
+                        fileSize: file.size,
+                        filePath: fileInfo.filePath
+                    })
+                });
+
+                const time = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+
+                await fetch('/api/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'MESSAGE', senderId: myId, senderName: myName, targetId: currentChat,
+                        content: '[File] ' + file.name, fileId: result.fileId, fileName: file.name,
+                        fileType: file.type, fileSize: file.size, time: time
+                    })
+                });
+
+                addMessage(myName, '[File] ' + file.name, time, true, result.fileId, file.name, file.type, file.size);
+                hideTransfer(transferId);
+                showNotification('File sent: ' + file.name);
+            } catch(e) {
+                hideTransfer(transferId);
+                showNotification('Failed to send file');
+            }
+            event.target.value = '';
+        }
+
+        function addMessage(sender, text, time, isMine, fileId, fileName, fileType, fileSize) {
+            const div = document.createElement('div');
+            div.className = 'message ' + (isMine ? 'mine' : 'other');
+            
+            let fileHtml = '';
+            if (fileId) {
+                const isImage = fileType && fileType.startsWith('image/');
+                fileHtml = `<div class="file-msg" onclick="window.open('/api/files/${fileId}', '_blank')">
+                    ${isImage ? `<img src="/api/files/${fileId}/thumbnail" onerror="this.outerHTML='<div class=icon>📄</div>'">` : '<div class="icon">📄</div>'}
+                    <div class="info"><div class="name">${escapeHtml(fileName || 'File')}</div><div class="size">${formatSize(fileSize)}</div></div>
+                </div>`;
+            }
+
+            div.innerHTML = `${!isMine ? '<div class="sender">'+escapeHtml(sender)+'</div>' : ''}<div>${escapeHtml(text)}</div>${fileHtml}<div class="time">${time}</div>`;
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function closeChat() {
+            currentChat = null;
+            document.getElementById('chat-panel').style.display = 'none';
+            messagesDiv.innerHTML = '';
+            refreshPeers();
+        }
+
+        function showNotification(text) {
+            const notif = document.getElementById('notification');
+            notif.textContent = text;
+            notif.style.display = 'block';
+            setTimeout(() => notif.style.display = 'none', 3000);
+        }
+
+        function showTransfer(id, name, percent) {
+            document.getElementById('transfer-name').textContent = name;
+            document.getElementById('transfer-progress').style.width = percent + '%';
+            document.getElementById('transfer-status').textContent = percent + '%';
+            document.getElementById('transfer-modal').style.display = 'flex';
+        }
+
+        function hideTransfer(id) {
+            document.getElementById('transfer-modal').style.display = 'none';
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatSize(bytes) {
+            if (!bytes) return '';
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+            return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+        }
+
+        function formatTime(ts) {
+            if (!ts) return '';
+            const d = new Date(ts);
+            return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+        }
+    </script>
+</body>
+</html>

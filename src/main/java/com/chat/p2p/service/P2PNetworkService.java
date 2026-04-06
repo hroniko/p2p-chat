@@ -1,0 +1,421 @@
+package com.chat.p2p.service;
+
+import com.chat.p2p.model.DiscoveryMessage;
+import com.chat.p2p.model.Peer;
+import com.chat.p2p.model.P2PMessage;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+
+import java.io.*;
+import java.net.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicLong;
+
+@Service
+public class P2PNetworkService {
+    private static final ObjectMapper objectMapper = new ObjectMapper();
+    private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("HH:mm:ss");
+    private static final long PEER_TIMEOUT = 10000;
+    private static final int CHUNK_SIZE = 65536;
+    private static final int TRANSFER_THREADS = 8;
+
+    @Value("${chat.discovery.port:45678}")
+    private int discoveryPort;
+
+    @Value("${chat.p2p.port:9090}")
+    private int p2pPort;
+
+    private ServerSocket serverSocket;
+    private volatile boolean running = false;
+    private String peerId;
+    private String peerName = "Unknown";
+
+    private final Map<String, Peer> discoveredPeers = new ConcurrentHashMap<>();
+    private final Map<String, Connection> connections = new ConcurrentHashMap<>();
+    private final ExecutorService executor = Executors.newCachedThreadPool();
+    private final ExecutorService transferExecutor = Executors.newFixedThreadPool(TRANSFER_THREADS);
+    private final CopyOnWriteArrayList<NetworkListener> listeners = new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<FileTransferListener> fileListeners = new CopyOnWriteArrayList<>();
+
+    @PostConstruct
+    public void init() {
+        this.peerId = UUID.randomUUID().toString().substring(0, 8);
+        startServer();
+        startDiscovery();
+        System.out.println("[" + LocalDateTime.now().format(formatter) + "] P2P Node started on port " + p2pPort);
+    }
+
+    public void addListener(NetworkListener listener) {
+        listeners.add(listener);
+    }
+
+    public void addFileListener(FileTransferListener listener) {
+        fileListeners.add(listener);
+    }
+
+    private void startServer() {
+        try {
+            serverSocket = new ServerSocket(p2pPort);
+            running = true;
+            executor.submit(this::acceptConnections);
+        } catch (IOException e) {
+            System.err.println("Failed to start P2P server: " + e.getMessage());
+        }
+    }
+
+    private void acceptConnections() {
+        while (running && !serverSocket.isClosed()) {
+            try {
+                Socket client = serverSocket.accept();
+                client.setKeepAlive(true);
+                client.setTcpNoDelay(true);
+                executor.submit(() -> handleClient(client));
+            } catch (IOException e) {
+                if (running) e.printStackTrace();
+            }
+        }
+    }
+
+    private void handleClient(Socket client) {
+        String peerKey = client.getInetAddress().getHostAddress() + ":" + client.getPort();
+        Connection conn;
+        try {
+            conn = new Connection(client);
+            connections.put(peerKey, conn);
+        } catch (IOException e) {
+            try { client.close(); } catch (IOException ex) {}
+            return;
+        }
+        
+        DataInputStream dis;
+        ConcurrentHashMap<String, FileReceivingState> receivingFiles = new ConcurrentHashMap<>();
+        
+        try {
+            dis = new DataInputStream(client.getInputStream());
+            
+            while (!client.isClosed()) {
+                int msgType = dis.read();
+                if (msgType == -1) break;
+                
+                if (msgType == 0) {
+                    String line = dis.readUTF();
+                    P2PMessage msg = objectMapper.readValue(line, P2PMessage.class);
+                    System.out.println("[" + LocalDateTime.now().format(formatter) + "] Message received: " + msg.getType() + " from " + msg.getSenderId());
+                    for (NetworkListener listener : listeners) {
+                        listener.onMessageReceived(msg);
+                    }
+                } else if (msgType == 1) {
+                    String transferId = dis.readUTF();
+                    String fileId = dis.readUTF();
+                    String senderId = dis.readUTF();
+                    String fileName = dis.readUTF();
+                    long fileSize = dis.readLong();
+                    long offset = dis.readLong();
+                    int chunkSize = dis.readInt();
+                    byte[] data = new byte[chunkSize];
+                    dis.readFully(data);
+                    boolean isLast = dis.readBoolean();
+
+                    FileReceivingState state = receivingFiles.computeIfAbsent(transferId, 
+                        id -> new FileReceivingState(transferId, fileId, senderId, fileName, fileSize));
+
+                    if (state.receivedChunks.add(offset)) {
+                        Path tempPath = Paths.get("files", "temp_" + transferId);
+                        Files.createDirectories(tempPath.getParent());
+                        RandomAccessFile raf = new RandomAccessFile(tempPath.toFile(), "rw");
+                        raf.seek(offset);
+                        raf.write(data);
+                        raf.close();
+                        state.received += chunkSize;
+                    }
+                    
+                    for (FileTransferListener listener : fileListeners) {
+                        listener.onProgress(transferId, state.received, state.fileSize);
+                    }
+
+                    if (isLast) {
+                        String ext = fileName.contains(".") ? fileName.substring(fileName.lastIndexOf(".")) : "";
+                        Path finalPath = Paths.get("files", fileId + ext);
+                        Path tempPath = Paths.get("files", "temp_" + transferId);
+                        if (Files.exists(tempPath)) {
+                            Files.move(tempPath, finalPath);
+                        }
+                        receivingFiles.remove(transferId);
+                        System.out.println("[" + LocalDateTime.now().format(formatter) + "] File received: " + fileName);
+                        for (FileTransferListener listener : fileListeners) {
+                            listener.onComplete(transferId, fileName, state.fileSize);
+                            listener.onFileComplete(transferId, fileId, fileName, state.fileSize, senderId);
+                        }
+                    }
+                }
+            }
+        } catch (EOFException | SocketException e) {
+            System.out.println("[" + LocalDateTime.now().format(formatter) + "] Connection closed");
+        } catch (Exception e) {
+            System.out.println("[" + LocalDateTime.now().format(formatter) + "] Client handler error: " + e.getMessage());
+        } finally {
+            for (FileReceivingState state : receivingFiles.values()) {
+                try {
+                    Files.deleteIfExists(Paths.get("files", "temp_" + state.transferId));
+                } catch (IOException e) {}
+            }
+            connections.remove(peerKey);
+            conn.close();
+        }
+    }
+
+    private void startDiscovery() {
+        Thread receiverThread = new Thread(this::receiveLoop);
+        receiverThread.setDaemon(true);
+        receiverThread.start();
+    }
+
+    @Scheduled(fixedRate = 3000)
+    public void broadcast() {
+        if (!running) return;
+
+        try {
+            DiscoveryMessage msg = new DiscoveryMessage(peerId, peerName, p2pPort);
+            String json = objectMapper.writeValueAsString(msg);
+
+            InetAddress broadcastAddr = InetAddress.getByName("255.255.255.255");
+            DatagramPacket packet = new DatagramPacket(json.getBytes(), json.length(), broadcastAddr, discoveryPort);
+
+            DatagramSocket socket = new DatagramSocket();
+            socket.setBroadcast(true);
+            socket.setReuseAddress(true);
+            socket.send(packet);
+            socket.close();
+        } catch (Exception e) {
+            // Ignore
+        }
+    }
+
+    private void receiveLoop() {
+        try (DatagramSocket socket = new DatagramSocket(discoveryPort)) {
+            socket.setBroadcast(true);
+            socket.setReuseAddress(true);
+            socket.setSoTimeout(1000);
+
+            byte[] buffer = new byte[1024];
+
+            while (running) {
+                try {
+                    DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+                    socket.receive(packet);
+                    String json = new String(packet.getData(), 0, packet.getLength());
+                    DiscoveryMessage msg = objectMapper.readValue(json, DiscoveryMessage.class);
+
+                    if (msg.getPeerId() != null && !msg.getPeerId().equals(peerId)) {
+                        String address = packet.getAddress().getHostAddress();
+                        Peer peer = discoveredPeers.computeIfAbsent(msg.getPeerId(),
+                            id -> new Peer(id, msg.getPeerName(), address, msg.getWsPort()));
+                        peer.setName(msg.getPeerName());
+                        peer.setAddress(address);
+                        peer.setPort(msg.getWsPort());
+                        peer.setLastSeen(System.currentTimeMillis());
+                    }
+                } catch (SocketTimeoutException e) {
+                    // Normal
+                }
+            }
+        } catch (Exception e) {
+            // Socket issues
+        }
+    }
+
+    @Scheduled(fixedRate = 1000)
+    public void cleanupPeers() {
+        long now = System.currentTimeMillis();
+        discoveredPeers.entrySet().removeIf(e -> now - e.getValue().getLastSeen() > PEER_TIMEOUT);
+        
+        connections.entrySet().removeIf(e -> {
+            if (e.getValue().socket.isClosed()) return true;
+            return false;
+        });
+    }
+
+    public void sendMessage(String targetId, P2PMessage message) {
+        Peer peer = discoveredPeers.get(targetId);
+        if (peer == null) {
+            System.out.println("[" + LocalDateTime.now().format(formatter) + "] Peer not found: " + targetId);
+            return;
+        }
+
+        String key = peer.getAddress() + ":" + peer.getPort();
+        
+        try {
+            Connection conn;
+            boolean newConnection = false;
+            if (!connections.containsKey(key) || connections.get(key).socket.isClosed()) {
+                System.out.println("[" + LocalDateTime.now().format(formatter) + "] Creating new connection to " + key);
+                Socket socket = new Socket(peer.getAddress(), peer.getPort());
+                socket.setKeepAlive(true);
+                socket.setTcpNoDelay(true);
+                conn = new Connection(socket);
+                connections.put(key, conn);
+                newConnection = true;
+            } else {
+                conn = connections.get(key);
+            }
+
+            synchronized (conn.dos) {
+                conn.dos.write(0);
+                conn.dos.writeUTF(objectMapper.writeValueAsString(message));
+                conn.dos.flush();
+            }
+            System.out.println("[" + LocalDateTime.now().format(formatter) + "] Message sent to " + targetId);
+            
+            if (newConnection) {
+                executor.submit(() -> handleClient(conn.socket));
+            }
+        } catch (Exception e) {
+            System.err.println("[" + LocalDateTime.now().format(formatter) + "] Send error: " + e.getMessage());
+        }
+    }
+
+    public void sendFile(String targetId, String fileId, String fileName, long fileSize, String filePath) {
+        Peer peer = discoveredPeers.get(targetId);
+        if (peer == null) {
+            System.out.println("[" + LocalDateTime.now().format(formatter) + "] Peer not found: " + targetId);
+            return;
+        }
+
+        Path fullPath = Paths.get("files", filePath);
+        if (!Files.exists(fullPath)) {
+            System.err.println("File not found: " + fullPath);
+            return;
+        }
+
+        String transferId = UUID.randomUUID().toString();
+        System.out.println("[" + LocalDateTime.now().format(formatter) + "] Starting file transfer: " + filePath + " (" + fileSize + " bytes)");
+        
+        executor.submit(() -> {
+            try {
+                String myPeerId = this.peerId;
+                Socket socket = new Socket(peer.getAddress(), peer.getPort());
+                socket.setKeepAlive(true);
+                socket.setTcpNoDelay(true);
+                DataOutputStream dos = new DataOutputStream(socket.getOutputStream());
+
+                long offset = 0;
+                int numChunks = (int) Math.ceil((double) fileSize / CHUNK_SIZE);
+                
+                for (int i = 0; i < numChunks; i++) {
+                    dos.write(1);
+                    dos.writeUTF(transferId);
+                    dos.writeUTF(fileId);
+                    dos.writeUTF(myPeerId);
+                    dos.writeUTF(fileName);
+                    dos.writeLong(fileSize);
+                    dos.writeLong(offset);
+
+                    RandomAccessFile raf = new RandomAccessFile(fullPath.toFile(), "r");
+                    raf.seek(offset);
+                    int size = (int) Math.min(CHUNK_SIZE, fileSize - offset);
+                    byte[] data = new byte[size];
+                    raf.readFully(data);
+                    raf.close();
+
+                    dos.writeInt(size);
+                    dos.write(data);
+                    dos.writeBoolean(i == numChunks - 1);
+                    dos.flush();
+
+                    offset += size;
+                    
+                    for (FileTransferListener listener : fileListeners) {
+                        listener.onProgress(transferId, offset, fileSize);
+                    }
+                }
+
+                System.out.println("[" + LocalDateTime.now().format(formatter) + "] File transfer complete");
+                socket.close();
+                
+            } catch (Exception e) {
+                System.err.println("[" + LocalDateTime.now().format(formatter) + "] File transfer error: " + e.getMessage());
+                e.printStackTrace();
+            }
+        });
+    }
+
+    public void setPeerName(String name) {
+        this.peerName = name;
+    }
+
+    public String getPeerId() {
+        return peerId;
+    }
+
+    public int getP2pPort() {
+        return p2pPort;
+    }
+
+    public Map<String, Peer> getPeers() {
+        return new ConcurrentHashMap<>(discoveredPeers);
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        running = false;
+        connections.values().forEach(Connection::close);
+        try { serverSocket.close(); } catch (IOException e) {}
+        executor.shutdown();
+        transferExecutor.shutdown();
+    }
+
+    public interface NetworkListener {
+        void onMessageReceived(P2PMessage message);
+    }
+
+    public interface FileTransferListener {
+        void onProgress(String transferId, long received, long total);
+        void onComplete(String transferId, String fileName, long fileSize);
+        void onFileComplete(String transferId, String fileId, String fileName, long fileSize, String senderId);
+    }
+
+    private class Connection {
+        Socket socket;
+        DataOutputStream dos;
+
+        Connection(Socket socket) throws IOException {
+            this.socket = socket;
+            this.dos = new DataOutputStream(socket.getOutputStream());
+        }
+
+        void close() {
+            try {
+                socket.close();
+            } catch (IOException e) {}
+        }
+    }
+
+    private static class FileReceivingState {
+        final String transferId;
+        final String fileId;
+        final String senderId;
+        final String fileName;
+        final long fileSize;
+        final Set<Long> receivedChunks = new CopyOnWriteArraySet<>();
+        long received;
+
+        FileReceivingState(String transferId, String fileId, String senderId, String fileName, long fileSize) {
+            this.transferId = transferId;
+            this.fileId = fileId;
+            this.senderId = senderId;
+            this.fileName = fileName;
+            this.fileSize = fileSize;
+            this.received = 0;
+        }
+    }
+}
