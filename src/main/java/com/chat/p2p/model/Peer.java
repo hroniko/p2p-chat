@@ -26,6 +26,7 @@ public class Peer {
     private String status = "offline"; // Статус: online, away, busy, offline
     private String statusMessage; // Пользовательский статус-сообщение ("На обеде", "В игре" и т.д.)
     private String avatarUrl; // URL аватара (если есть)
+    private String bio; // Описание о себе (до 200 символов)
 
     public Peer() {}
 
@@ -70,6 +71,9 @@ public class Peer {
 
     public String getAvatarUrl() { return avatarUrl; }
     public void setAvatarUrl(String avatarUrl) { this.avatarUrl = avatarUrl; }
+
+    public String getBio() { return bio; }
+    public void setBio(String bio) { this.bio = bio; }
 
     public String getWsUrl() {
         return "wss://" + address + ":" + port + "/ws";

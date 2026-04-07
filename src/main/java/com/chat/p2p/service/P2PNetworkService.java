@@ -59,6 +59,8 @@ public class P2PNetworkService {
     private volatile boolean running = false; // Атомарная переменная - не для красоты, а для безопасности
     private String peerId; // Уникальный ID пира. UUID, обрезанный как пицца - по кускам
     private String peerName = "Unknown"; // Имя, которое пользователь сам себе придумал. Верим на слово
+    private String peerBio = ""; // Описание о себе
+    private String publicAddress = "127.0.0.1"; // Публичный IP (определяется при старте)
     private int wsPort = 0;
 
     private final Map<String, Peer> discoveredPeers = new ConcurrentHashMap<>(); // Кэш пиров. Кто онлайн - тут
@@ -82,10 +84,35 @@ public class P2PNetworkService {
     public void init() {
         this.peerId = UUID.randomUUID().toString().substring(0, 8);
         this.wsPort = serverPort;
+        this.publicAddress = detectPublicAddress();
         cleanupTempFiles();
         startServer();
         startDiscovery();
-        log.info("P2P Node started on port {} with peerId {}", p2pPort, peerId);
+        log.info("P2P Node started on port {} with peerId {} (IP: {})", p2pPort, peerId, publicAddress);
+    }
+
+    /**
+     * Определить публичный IP адрес.
+     * Берёт первый не-loopback IPv4 адрес.
+     */
+    private String detectPublicAddress() {
+        try {
+            var interfaces = java.net.NetworkInterface.getNetworkInterfaces();
+            while (interfaces.hasMoreElements()) {
+                var ni = interfaces.nextElement();
+                if (ni.isLoopback() || !ni.isUp() || ni.isVirtual()) continue;
+                var addresses = ni.getInetAddresses();
+                while (addresses.hasMoreElements()) {
+                    var addr = addresses.nextElement();
+                    if (!addr.isLoopbackAddress() && addr instanceof java.net.Inet4Address) {
+                        return addr.getHostAddress();
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to detect public IP: {}", e.getMessage());
+        }
+        return "127.0.0.1";
     }
 
     private void cleanupTempFiles() {
@@ -703,6 +730,8 @@ public class P2PNetworkService {
         this.peerName = name;
     }
 
+    public String getPeerName() { return peerName; }
+
     /** Установить статус пира (online, away, busy, offline) */
     public void setStatus(String status) {
         // TODO: отправить статус другим пирам через TCP
@@ -715,12 +744,25 @@ public class P2PNetworkService {
         log.info("Status message: {}", message);
     }
 
+    /** Установить bio */
+    public void setBio(String bio) {
+        this.peerBio = bio != null ? bio.substring(0, Math.min(bio.length(), 200)) : "";
+        log.info("Bio updated: {}", this.peerBio);
+    }
+
+    public String getBio() { return peerBio; }
+    public String getPublicAddress() { return publicAddress; }
+
     public String getPeerId() {
         return peerId;
     }
 
     public int getP2pPort() {
         return p2pPort;
+    }
+
+    public int getServerPort() {
+        return serverPort;
     }
 
     public Map<String, Peer> getPeers() {

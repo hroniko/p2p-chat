@@ -115,9 +115,12 @@
         .status-box { background: var(--bg-panel); padding: 25px; border-radius: var(--radius); min-width: 300px; }
         .status-box h3 { margin-bottom: 15px; }
         .status-options { display: flex; flex-direction: column; gap: 8px; }
-        .status-option { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: var(--radius-sm); cursor: pointer; background: var(--bg-input); }
+        .status-option { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: var(--radius-sm); cursor: pointer; background: var(--bg-input); border: 2px solid transparent; transition: all 0.15s; }
         .status-option:hover { background: var(--bg-header); }
-        .status-option.active { border: 2px solid var(--accent); }
+        .status-option.active { border-color: var(--status-online); background: rgba(34, 197, 94, 0.15); }
+        .status-option.active[data-status="away"] { border-color: var(--status-away); background: rgba(245, 158, 11, 0.15); }
+        .status-option.active[data-status="busy"] { border-color: var(--status-busy); background: rgba(239, 68, 68, 0.15); }
+        .status-option.active[data-status="offline"] { border-color: var(--status-offline); background: rgba(107, 114, 128, 0.15); }
         .status-option input { margin: 0; }
 
         .search-box { padding: 10px; background: var(--bg-header); display: none; gap: 5px; }
@@ -140,7 +143,8 @@
         <button onclick="start()">Start</button>
     </div>
     <div id="info">
-        <span>Your ID: <b id="my-id">-</b></span>
+        <span>IP: <b id="my-ip" style="color:var(--accent-blue)">-</b></span>
+        <span>ID: <b id="my-id">-</b></span>
         <span>Status: <span id="my-status" style="color:var(--status-offline)">Offline</span></span>
         <span id="connection-status" style="color:var(--accent-red)">Connecting...</span>
     </div>
@@ -149,7 +153,10 @@
         <div class="panel" id="peers-panel">
             <div class="panel-header">
                 <span>Peers</span>
-                <button onclick="showStatusModal()" style="background:var(--accent);border:none;color:white;padding:5px 10px;border-radius:5px;cursor:pointer;font-size:12px">⚙ My Status</button>
+                <div style="display:flex;gap:5px">
+                    <button onclick="showStatsModal()" style="background:var(--accent-blue);border:none;color:white;padding:5px 10px;border-radius:5px;cursor:pointer;font-size:12px" title="Statistics">📊</button>
+                    <button onclick="showProfileModal()" style="background:var(--accent);border:none;color:white;padding:5px 10px;border-radius:5px;cursor:pointer;font-size:12px" title="Profile">👤 Profile</button>
+                </div>
             </div>
             <div class="peer-list" id="peer-list"><div class="empty-state">Searching for peers...</div></div>
         </div>
@@ -184,7 +191,64 @@
         </div>
     </div>
 
-    <!-- Модалка статуса -->
+    <!-- Панель профиля -->
+    <div class="status-modal" id="profile-modal">
+        <div class="status-box" style="min-width:400px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+                <h3 style="margin:0">👤 My Profile</h3>
+                <button onclick="hideProfileModal()" style="background:none;border:none;color:var(--text-secondary);font-size:20px;cursor:pointer">✕</button>
+            </div>
+            <div style="text-align:center;margin-bottom:20px">
+                <div style="width:80px;height:80px;border-radius:50%;background:var(--bg-header);margin:0 auto 10px;display:flex;align-items:center;justify-content:center;font-size:36px;overflow:hidden;cursor:pointer" id="profile-avatar" onclick="document.getElementById('avatar-upload').click()">
+                    <span id="profile-avatar-text">👤</span>
+                    <img id="profile-avatar-img" style="width:100%;height:100%;object-fit:cover;display:none" onclick="event.stopPropagation()">
+                </div>
+                <input type="file" id="avatar-upload" accept="image/*" style="display:none" onchange="uploadAvatar(event)">
+                <div style="font-size:11px;color:var(--text-muted)">Click to change avatar</div>
+            </div>
+            <div style="margin-bottom:15px">
+                <label style="font-size:12px;color:var(--text-secondary)">Name</label>
+                <input type="text" id="profile-name" placeholder="Your name" style="width:100%;padding:10px;border:none;border-radius:5px;background:var(--bg-input);color:var(--text-primary);margin-top:5px" oninput="updateProfileName(this.value)">
+            </div>
+            <div style="margin-bottom:15px">
+                <label style="font-size:12px;color:var(--text-secondary)">Bio</label>
+                <textarea id="profile-bio" placeholder="Tell about yourself (max 200 chars)" maxlength="200" rows="3" style="width:100%;padding:10px;border:none;border-radius:5px;background:var(--bg-input);color:var(--text-primary);margin-top:5px;resize:vertical" oninput="updateBio(this.value)"></textarea>
+                <div style="font-size:10px;color:var(--text-muted);text-align:right"><span id="bio-counter">0</span>/200</div>
+            </div>
+            <div style="margin-bottom:15px">
+                <label style="font-size:12px;color:var(--text-secondary)">Status</label>
+                <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px" id="current-status-display">Current: <span style="color:var(--status-online)">Online</span></div>
+                <div class="status-options" style="margin-top:5px">
+                    <div class="status-option active" data-status="online" onclick="setStatus('online')"><span class="status-dot online"></span><span>Online</span></div>
+                    <div class="status-option" data-status="away" onclick="setStatus('away')"><span class="status-dot away"></span><span>Away</span></div>
+                    <div class="status-option" data-status="busy" onclick="setStatus('busy')"><span class="status-dot busy"></span><span>Busy</span></div>
+                    <div class="status-option" data-status="offline" onclick="setStatus('offline')"><span class="status-dot offline"></span><span>Offline</span></div>
+                </div>
+            </div>
+            <div style="margin-bottom:15px">
+                <label style="font-size:12px;color:var(--text-secondary)">Status message</label>
+                <input type="text" id="profile-status-msg" placeholder="What are you doing?" style="width:100%;padding:10px;border:none;border-radius:5px;background:var(--bg-input);color:var(--text-primary);margin-top:5px" oninput="setStatusMessage(this.value)">
+            </div>
+            <div style="padding:10px;background:var(--bg-input);border-radius:5px;font-size:11px">
+                <div>IP: <b id="profile-ip" style="color:var(--accent-blue)">-</b></div>
+                <div>Peer ID: <b id="profile-peer-id">-</b></div>
+                <div>Messages: <b id="profile-msg-count">0</b></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Панель статистики -->
+    <div class="status-modal" id="stats-modal">
+        <div class="status-box" style="min-width:450px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+                <h3 style="margin:0">📊 Activity Statistics</h3>
+                <button onclick="hideStatsModal()" style="background:none;border:none;color:var(--text-secondary);font-size:20px;cursor:pointer">✕</button>
+            </div>
+            <div id="stats-content">Loading...</div>
+        </div>
+    </div>
+
+    <!-- Модалка статуса (legacy) -->
     <div class="status-modal" id="status-modal">
         <div class="status-box">
             <h3>Set Your Status</h3>
@@ -261,9 +325,23 @@
             await fetch('/api/set-name?name=' + encodeURIComponent(myName), { method: 'POST' });
 
             document.getElementById('my-id').textContent = myId;
+            document.getElementById('my-ip').textContent = info.publicAddress || '-';
             document.getElementById('my-status').textContent = 'Online';
             document.getElementById('my-status').style.color = 'var(--status-online)';
             document.getElementById('setup').style.display = 'none';
+
+            // Заполняем профиль
+            if (info.avatarUrl) {
+                document.getElementById('profile-avatar-img').src = info.avatarUrl;
+                document.getElementById('profile-avatar-img').style.display = 'block';
+                document.getElementById('profile-avatar-text').style.display = 'none';
+            }
+            document.getElementById('profile-name').value = info.name || myName;
+            document.getElementById('profile-bio').value = info.bio || '';
+            document.getElementById('bio-counter').textContent = (info.bio || '').length;
+            document.getElementById('profile-ip').textContent = info.publicAddress || '-';
+            document.getElementById('profile-peer-id').textContent = myId;
+            document.getElementById('profile-msg-count').textContent = info.messageCount || 0;
 
             connectWebSocket();
             setInterval(refreshPeers, 3000);
@@ -573,16 +651,149 @@
         function showStatusModal() { document.getElementById('status-modal').style.display = 'flex'; }
         function hideStatusModal() { document.getElementById('status-modal').style.display = 'none'; }
 
+        function showProfileModal() {
+            document.getElementById('profile-modal').style.display = 'flex';
+        }
+        function hideProfileModal() {
+            document.getElementById('profile-modal').style.display = 'none';
+        }
+
+        function showStatsModal() {
+            document.getElementById('stats-modal').style.display = 'flex';
+            loadStats();
+        }
+        function hideStatsModal() {
+            document.getElementById('stats-modal').style.display = 'none';
+        }
+
+        async function loadStats() {
+            const content = document.getElementById('stats-content');
+            content.innerHTML = '<div style="text-align:center;padding:20px">Loading...</div>';
+
+            try {
+                const res = await fetch('/api/stats');
+                const stats = await res.json();
+
+                let topPeersHtml = '';
+                if (stats.topPeers && Object.keys(stats.topPeers).length > 0) {
+                    const sorted = Object.entries(stats.topPeers).sort((a, b) => b[1] - a[1]).slice(0, 5);
+                    const maxCount = sorted[0][1];
+                    topPeersHtml = '<h4 style="margin:15px 0 10px">Top Conversations</h4>' +
+                        sorted.map(([peerId, count]) => {
+                            const pct = Math.round((count / maxCount) * 100);
+                            const name = peers[peerId]?.name || peerId.substring(0, 8);
+                            return `<div style="margin-bottom:8px">
+                                <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+                                    <span>${escapeHtml(name)}</span><span>${count} msg</span>
+                                </div>
+                                <div style="height:6px;background:var(--bg-input);border-radius:3px;overflow:hidden">
+                                    <div style="height:100%;width:${pct}%;background:var(--accent-blue);border-radius:3px"></div>
+                                </div>
+                            </div>`;
+                        }).join('');
+                } else {
+                    topPeersHtml = '<div style="text-align:center;padding:15px;color:var(--text-muted)">No conversations yet</div>';
+                }
+
+                content.innerHTML = `
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:15px">
+                        <div style="background:var(--bg-input);padding:15px;border-radius:8px;text-align:center">
+                            <div style="font-size:28px;font-weight:700;color:var(--accent)">${stats.totalMessages || 0}</div>
+                            <div style="font-size:11px;color:var(--text-secondary)">Total Messages</div>
+                        </div>
+                        <div style="background:var(--bg-input);padding:15px;border-radius:8px;text-align:center">
+                            <div style="font-size:28px;font-weight:700;color:var(--accent-blue)">${stats.sentMessages || 0}</div>
+                            <div style="font-size:11px;color:var(--text-secondary)">Sent</div>
+                        </div>
+                        <div style="background:var(--bg-input);padding:15px;border-radius:8px;text-align:center">
+                            <div style="font-size:28px;font-weight:700;color:var(--status-away)">${stats.receivedMessages || 0}</div>
+                            <div style="font-size:11px;color:var(--text-secondary)">Received</div>
+                        </div>
+                        <div style="background:var(--bg-input);padding:15px;border-radius:8px;text-align:center">
+                            <div style="font-size:28px;font-weight:700;color:var(--accent-red)">${stats.filesCount || 0}</div>
+                            <div style="font-size:11px;color:var(--text-secondary)">Files Shared</div>
+                        </div>
+                    </div>
+                    <div style="font-size:12px;color:var(--text-secondary)">Unique peers: <b>${stats.uniquePeers || 0}</b></div>
+                    ${topPeersHtml}
+                `;
+            } catch(e) {
+                content.innerHTML = '<div style="text-align:center;padding:20px;color:var(--accent-red)">Failed to load stats</div>';
+            }
+        }
+
+        async function uploadAvatar(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const res = await fetch('/api/avatar/upload', { method: 'POST', body: formData });
+                const result = await res.json();
+
+                document.getElementById('profile-avatar-img').src = result.avatarUrl;
+                document.getElementById('profile-avatar-img').style.display = 'block';
+                document.getElementById('profile-avatar-text').style.display = 'none';
+                showNotification('Avatar updated!');
+            } catch(e) {
+                showNotification('Failed to upload avatar');
+            }
+        }
+
+        async function updateProfileName(name) {
+            if (name.trim()) {
+                await fetch('/api/set-name?name=' + encodeURIComponent(name.trim()), { method: 'POST' });
+            }
+        }
+
+        async function updateBio(bio) {
+            document.getElementById('bio-counter').textContent = bio.length;
+            await fetch('/api/bio', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bio })
+            });
+        }
+
         async function setStatus(status) {
             await fetch('/api/status', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status })
             });
+
+            // Подсвечиваем выбранный статус
             document.querySelectorAll('.status-option').forEach(el => el.classList.remove('active'));
-            event.target.closest('.status-option').classList.add('active');
+            const activeOption = document.querySelector(`.status-option[data-status="${status}"]`);
+            if (activeOption) {
+                activeOption.classList.add('active');
+            }
+
+            // Обновляем отображение текущего статуса в панели профиля
+            const statusDisplay = document.getElementById('current-status-display');
+            if (statusDisplay) {
+                const statusColors = {
+                    online: 'var(--status-online)',
+                    away: 'var(--status-away)',
+                    busy: 'var(--status-busy)',
+                    offline: 'var(--status-offline)'
+                };
+                const statusLabels = {
+                    online: 'Online',
+                    away: 'Away',
+                    busy: 'Busy',
+                    offline: 'Offline'
+                };
+                statusDisplay.innerHTML = `Current: <span style="color:${statusColors[status]}">${statusLabels[status]}</span>`;
+            }
+
+            // Обновляем статус в шапке
             document.getElementById('my-status').textContent = status.charAt(0).toUpperCase() + status.slice(1);
             document.getElementById('my-status').style.color = 'var(--status-' + status + ')';
+
+            showNotification('Status changed to ' + status.charAt(0).toUpperCase() + status.slice(1));
         }
 
         async function setStatusMessage(msg) {

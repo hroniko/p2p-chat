@@ -96,4 +96,18 @@ public class PeerController {
         log.info("Status set to: {} ({})", status, message);
         return Map.of("status", "updated", "newStatus", status);
     }
+
+    /**
+     * Обновить bio (о себе).
+     */
+    @PostMapping("/bio")
+    public Map<String, Object> setBio(@RequestBody Map<String, String> request) {
+        String bio = request.get("bio");
+        if (bio != null && bio.length() > 200) {
+            return Map.of("error", "Bio too long (max 200 chars)");
+        }
+
+        networkService.setBio(bio);
+        return Map.of("status", "updated", "bio", networkService.getBio());
+    }
 }
