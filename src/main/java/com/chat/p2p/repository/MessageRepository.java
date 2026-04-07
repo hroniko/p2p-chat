@@ -34,4 +34,13 @@ public interface MessageRepository extends JpaRepository<MessageEntity, String> 
 
     /** Количество сообщений для очистки */
     long countByTimestampBefore(LocalDateTime before);
+
+    /** Закреплённые сообщения для пира */
+    List<MessageEntity> findByPeerIdAndPinnedTrue(String peerId);
+
+    /** Сообщения без удалённых */
+    List<MessageEntity> findByPeerIdAndDeletedFalseOrderByTimestampAsc(String peerId);
+
+    /** Сообщения от конкретного отправителя */
+    List<MessageEntity> findBySenderIdAndId(String senderId, String messageId);
 }

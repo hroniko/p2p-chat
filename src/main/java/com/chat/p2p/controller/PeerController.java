@@ -74,4 +74,26 @@ public class PeerController {
 
         return Map.of("status", "peer_added", "address", address, "port", port);
     }
+
+    /**
+     * Установить статус текущего пира.
+     * Доступные статусы: online, away, busy, offline.
+     */
+    @PostMapping("/status")
+    public Map<String, Object> setStatus(@RequestBody Map<String, String> request) {
+        String status = request.get("status");
+        String message = request.get("message");
+
+        if (status == null || !status.matches("online|away|busy|offline")) {
+            return Map.of("error", "Invalid status. Use: online, away, busy, offline");
+        }
+
+        networkService.setStatus(status);
+        if (message != null && !message.isBlank()) {
+            networkService.setStatusMessage(message);
+        }
+
+        log.info("Status set to: {} ({})", status, message);
+        return Map.of("status", "updated", "newStatus", status);
+    }
 }

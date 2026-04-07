@@ -23,6 +23,9 @@ public class Peer {
     private boolean connected; // Есть ли активное TCP соединение
     private boolean trusted; // Доверенный пир (прошёл авторизацию)
     private String authToken; // Токен авторизации
+    private String status = "offline"; // Статус: online, away, busy, offline
+    private String statusMessage; // Пользовательский статус-сообщение ("На обеде", "В игре" и т.д.)
+    private String avatarUrl; // URL аватара (если есть)
 
     public Peer() {}
 
@@ -58,6 +61,15 @@ public class Peer {
 
     public String getAuthToken() { return authToken; }
     public void setAuthToken(String authToken) { this.authToken = authToken; }
+
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
+
+    public String getStatusMessage() { return statusMessage; }
+    public void setStatusMessage(String statusMessage) { this.statusMessage = statusMessage; }
+
+    public String getAvatarUrl() { return avatarUrl; }
+    public void setAvatarUrl(String avatarUrl) { this.avatarUrl = avatarUrl; }
 
     public String getWsUrl() {
         return "wss://" + address + ":" + port + "/ws";

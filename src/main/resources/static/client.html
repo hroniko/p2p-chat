@@ -5,91 +5,174 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>P2P Chat</title>
     <style>
+        :root {
+            --bg-primary: #0f0f23;
+            --bg-secondary: #1a1a2e;
+            --bg-panel: #16213e;
+            --bg-header: #0f3460;
+            --bg-message-mine: #2d6a4f;
+            --bg-message-other: #1b4332;
+            --bg-input: #1a1a2e;
+            --text-primary: #eee;
+            --text-secondary: #aaa;
+            --text-muted: #666;
+            --accent: #4CAF50;
+            --accent-red: #e94560;
+            --accent-blue: #3b82f6;
+            --border: #0f3460;
+            --status-online: #22c55e;
+            --status-away: #f59e0b;
+            --status-busy: #ef4444;
+            --status-offline: #6b7280;
+            --radius: 10px;
+            --radius-sm: 6px;
+        }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: Arial, sans-serif; background: #1a1a2e; color: #eee; height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 20px; }
-        h1 { margin-bottom: 10px; color: #4CAF50; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg-primary); color: var(--text-primary); height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        h1 { margin-bottom: 10px; color: var(--accent); font-size: 1.5rem; }
         #setup { margin-bottom: 20px; text-align: center; }
-        #setup input { padding: 10px; border: none; border-radius: 5px; width: 200px; margin-right: 10px; }
-        #setup button { padding: 10px 20px; border: none; border-radius: 5px; background: #4CAF50; color: white; cursor: pointer; }
-        #info { font-size: 12px; color: #888; margin-bottom: 20px; }
-        .container { display: flex; gap: 20px; width: 100%; max-width: 900px; height: calc(100vh - 150px); }
-        .panel { flex: 1; background: #16213e; border-radius: 10px; display: flex; flex-direction: column; overflow: hidden; }
-        .panel-header { padding: 15px; background: #0f3460; font-weight: bold; }
+        #setup input { padding: 10px; border: none; border-radius: var(--radius-sm); width: 200px; margin-right: 10px; background: var(--bg-input); color: var(--text-primary); }
+        #setup button { padding: 10px 20px; border: none; border-radius: var(--radius-sm); background: var(--accent); color: white; cursor: pointer; }
+        #info { font-size: 11px; color: var(--text-muted); margin-bottom: 20px; display: flex; gap: 15px; align-items: center; }
+        .container { display: flex; gap: 20px; width: 100%; max-width: 1100px; height: calc(100vh - 130px); }
+        .panel { flex: 1; background: var(--bg-panel); border-radius: var(--radius); display: flex; flex-direction: column; overflow: hidden; }
+        .panel-header { padding: 15px; background: var(--bg-header); font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
         .peer-list { flex: 1; overflow-y: auto; }
-        .peer { padding: 12px 15px; cursor: pointer; border-bottom: 1px solid #0f3460; }
-        .peer:hover { background: #1a1a4e; }
-        .peer.active { background: #2a2a5e; border-left: 3px solid #4CAF50; }
-        .peer-name { font-weight: bold; }
-        .peer-id { font-size: 10px; color: #666; }
+        .peer { padding: 12px 15px; cursor: pointer; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; transition: background 0.15s; }
+        .peer:hover { background: rgba(255,255,255,0.05); }
+        .peer.active { background: rgba(76, 175, 80, 0.15); border-left: 3px solid var(--accent); }
+        .peer-avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--bg-header); display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+        .peer-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+        .peer-info { flex: 1; min-width: 0; }
+        .peer-name { font-weight: 600; display: flex; align-items: center; gap: 6px; }
+        .peer-id { font-size: 10px; color: var(--text-muted); }
+        .peer-status-msg { font-size: 11px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+        .status-dot.online { background: var(--status-online); }
+        .status-dot.away { background: var(--status-away); }
+        .status-dot.busy { background: var(--status-busy); }
+        .status-dot.offline { background: var(--status-offline); }
+        .trusted-badge { background: var(--accent); color: white; padding: 1px 5px; border-radius: 3px; font-size: 9px; }
+
         #chat-panel { display: none; flex-direction: column; }
-        #chat-header { padding: 15px; background: #0f3460; display: flex; justify-content: space-between; align-items: center; }
-        #chat-header button { padding: 5px 10px; border: none; border-radius: 5px; background: #e94560; color: white; cursor: pointer; }
+        #chat-header { padding: 12px 15px; background: var(--bg-header); display: flex; justify-content: space-between; align-items: center; }
+        #chat-header .chat-with { display: flex; align-items: center; gap: 10px; }
+        #chat-header button { padding: 5px 10px; border: none; border-radius: var(--radius-sm); background: var(--accent-red); color: white; cursor: pointer; font-size: 12px; margin-left: 5px; }
+
+        .pinned-bar { background: rgba(76, 175, 80, 0.1); padding: 8px 15px; font-size: 12px; display: none; border-bottom: 1px solid var(--border); }
+        .pinned-bar.has-pinned { display: block; }
+
         #chat-messages { flex: 1; padding: 15px; overflow-y: auto; }
-        .message { margin-bottom: 10px; padding: 8px 12px; border-radius: 8px; max-width: 85%; word-break: break-word; }
-        .message.mine { background: #4CAF50; margin-left: auto; }
-        .message.other { background: #0f3460; }
-        .message .sender { font-size: 11px; color: #aaa; margin-bottom: 2px; }
-        .message .time { font-size: 10px; color: #888; text-align: right; margin-top: 2px; }
-        .file-msg { background: #0a0a1a; padding: 8px; border-radius: 5px; margin-top: 5px; display: flex; align-items: center; gap: 10px; cursor: pointer; }
-        .file-msg:hover { background: #1a1a3a; }
-        .file-msg img { width: 80px; height: 80px; object-fit: cover; border-radius: 3px; }
+        .message { margin-bottom: 12px; padding: 10px 14px; border-radius: 12px; max-width: 80%; word-break: break-word; position: relative; }
+        .message.mine { background: var(--bg-message-mine); margin-left: auto; }
+        .message.other { background: var(--bg-message-other); }
+        .message.deleted { opacity: 0.5; font-style: italic; }
+        .message .sender { font-size: 11px; color: var(--text-secondary); margin-bottom: 3px; font-weight: 600; }
+        .message .content { line-height: 1.4; }
+        .message .meta { display: flex; justify-content: flex-end; align-items: center; gap: 5px; margin-top: 4px; }
+        .message .time { font-size: 10px; color: var(--text-muted); }
+        .message .status { font-size: 12px; }
+        .message .edited-label { font-size: 9px; color: var(--text-muted); font-style: italic; }
+        .message .actions { position: absolute; top: -8px; right: -8px; display: none; gap: 3px; }
+        .message:hover .actions { display: flex; }
+        .message .actions button { background: var(--bg-panel); border: 1px solid var(--border); color: var(--text-secondary); width: 24px; height: 24px; border-radius: 50%; cursor: pointer; font-size: 12px; }
+        .message .actions button:hover { background: var(--accent); color: white; }
+
+        .reactions { display: flex; gap: 4px; margin-top: 5px; flex-wrap: wrap; }
+        .reaction { background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 10px; font-size: 12px; cursor: pointer; }
+        .reaction:hover { background: rgba(255,255,255,0.2); }
+        .reaction.own { background: rgba(76, 175, 80, 0.3); }
+
+        .emoji-picker { position: absolute; bottom: 100%; right: 0; background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px; display: none; gap: 3px; }
+        .emoji-picker.show { display: flex; }
+        .emoji-picker button { background: none; border: none; font-size: 18px; cursor: pointer; padding: 3px; border-radius: 3px; }
+        .emoji-picker button:hover { background: rgba(255,255,255,0.1); }
+
+        .file-msg { background: rgba(0,0,0,0.3); padding: 10px; border-radius: var(--radius-sm); margin-top: 5px; display: flex; align-items: center; gap: 10px; cursor: pointer; }
+        .file-msg:hover { background: rgba(255,255,255,0.05); }
+        .file-msg img { width: 80px; height: 80px; object-fit: cover; border-radius: var(--radius-sm); }
         .file-msg .icon { font-size: 32px; }
         .file-msg .info { flex: 1; }
-        .file-msg .name { color: #4CAF50; font-size: 12px; }
-        .file-msg .size { color: #888; font-size: 10px; }
-        .typing-indicator { font-size: 12px; color: #888; font-style: italic; height: 20px; }
-        .search-box { padding: 10px; background: #0f3460; display: none; }
-        .search-box input { flex: 1; padding: 8px; border: none; border-radius: 5px; background: #1a1a2e; color: #eee; }
-        .search-box button { padding: 8px 15px; border: none; border-radius: 5px; background: #4CAF50; color: white; cursor: pointer; margin-left: 5px; }
-        .peer-status { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
-        .peer-status.online { background: #4CAF50; }
-        .peer-status.offline { background: #666; }
-        #chat-header button { margin-left: 5px; padding: 5px 10px; border: none; border-radius: 5px; background: #4CAF50; color: white; cursor: pointer; }
-        #chat-input { padding: 10px; background: #0f3460; display: flex; gap: 10px; align-items: center; }
-        #chat-input input { flex: 1; padding: 10px; border: none; border-radius: 5px; background: #1a1a2e; color: #eee; }
-        #chat-input button, #attach-btn { padding: 10px 15px; border: none; border-radius: 5px; background: #4CAF50; color: white; cursor: pointer; font-size: 16px; }
-        #attach-btn { background: #0f3460; padding: 10px 12px; }
+        .file-msg .name { color: var(--accent); font-size: 12px; }
+        .file-msg .size { color: var(--text-muted); font-size: 10px; }
+
+        .typing-indicator { font-size: 12px; color: var(--text-secondary); font-style: italic; height: 20px; padding: 0 15px; }
+
+        #chat-input { padding: 10px; background: var(--bg-header); display: flex; gap: 10px; align-items: center; }
+        #chat-input input { flex: 1; padding: 10px; border: none; border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-primary); }
+        #chat-input button { padding: 10px 15px; border: none; border-radius: var(--radius-sm); background: var(--accent); color: white; cursor: pointer; font-size: 16px; }
+        #attach-btn { background: var(--bg-panel) !important; padding: 10px 12px !important; }
         #file-input { display: none; }
-        .transfer-modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; z-index: 1000; }
-        .transfer-box { background: #16213e; padding: 30px; border-radius: 10px; text-align: center; min-width: 300px; }
-        .transfer-box .progress { width: 100%; height: 10px; background: #0a0a1a; border-radius: 5px; margin: 15px 0; overflow: hidden; }
-        .transfer-box .progress div { height: 100%; background: #4CAF50; transition: width 0.3s; }
-        #notification { position: fixed; bottom: 20px; right: 20px; background: #0f3460; padding: 15px 20px; border-radius: 8px; display: none; border-left: 4px solid #4CAF50; }
-        .auth-modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; z-index: 1000; }
-        .auth-box { background: #16213e; padding: 30px; border-radius: 10px; text-align: center; min-width: 300px; }
-        .auth-box input { padding: 10px; border: none; border-radius: 5px; width: 100%; margin: 10px 0; background: #1a1a2e; color: #eee; }
-        .auth-box button { padding: 10px 20px; border: none; border-radius: 5px; margin: 5px; cursor: pointer; }
-        .auth-box .accept { background: #4CAF50; color: white; }
-        .auth-box .reject { background: #e94560; color: white; }
-        .trusted-badge { background: #4CAF50; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 5px; }
+
+        .transfer-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; z-index: 1000; }
+        .transfer-box { background: var(--bg-panel); padding: 30px; border-radius: var(--radius); text-align: center; min-width: 300px; }
+        .transfer-box .progress { width: 100%; height: 10px; background: var(--bg-input); border-radius: 5px; margin: 15px 0; overflow: hidden; }
+        .transfer-box .progress div { height: 100%; background: var(--accent); transition: width 0.3s; }
+        #notification { position: fixed; bottom: 20px; right: 20px; background: var(--bg-header); padding: 12px 20px; border-radius: var(--radius-sm); display: none; border-left: 4px solid var(--accent); }
+
+        /* Статус-модалка */
+        .status-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: center; z-index: 1000; }
+        .status-box { background: var(--bg-panel); padding: 25px; border-radius: var(--radius); min-width: 300px; }
+        .status-box h3 { margin-bottom: 15px; }
+        .status-options { display: flex; flex-direction: column; gap: 8px; }
+        .status-option { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: var(--radius-sm); cursor: pointer; background: var(--bg-input); }
+        .status-option:hover { background: var(--bg-header); }
+        .status-option.active { border: 2px solid var(--accent); }
+        .status-option input { margin: 0; }
+
+        .search-box { padding: 10px; background: var(--bg-header); display: none; gap: 5px; }
+        .search-box input { flex: 1; padding: 8px; border: none; border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-primary); }
+        .search-box button { padding: 8px 15px; border: none; border-radius: var(--radius-sm); background: var(--accent); color: white; cursor: pointer; }
+
+        .context-menu { position: fixed; background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px; z-index: 100; display: none; min-width: 120px; }
+        .context-menu.show { display: block; }
+        .context-menu button { display: block; width: 100%; padding: 8px 12px; border: none; background: none; color: var(--text-primary); cursor: pointer; text-align: left; border-radius: 3px; font-size: 13px; }
+        .context-menu button:hover { background: var(--accent); }
+        .context-menu button.danger { color: var(--accent-red); }
+
+        .empty-state { padding: 30px; text-align: center; color: var(--text-muted); }
     </style>
 </head>
 <body>
-    <h1>P2P Chat</h1>
+    <h1>💬 P2P Chat</h1>
     <div id="setup">
         <input type="text" id="username" placeholder="Your name" maxlength="20">
         <button onclick="start()">Start</button>
     </div>
-    <div id="info">Your ID: <span id="my-id">-</span> | P2P Port: <span id="my-port">-</span> | <span id="connection-status" style="color:#e94560">Connecting...</span></div>
-    
+    <div id="info">
+        <span>Your ID: <b id="my-id">-</b></span>
+        <span>Status: <span id="my-status" style="color:var(--status-offline)">Offline</span></span>
+        <span id="connection-status" style="color:var(--accent-red)">Connecting...</span>
+    </div>
+
     <div class="container">
         <div class="panel" id="peers-panel">
-            <div class="panel-header">Peers in Network</div>
+            <div class="panel-header">
+                <span>Peers</span>
+                <button onclick="showStatusModal()" style="background:var(--accent);border:none;color:white;padding:5px 10px;border-radius:5px;cursor:pointer;font-size:12px">⚙ My Status</button>
+            </div>
             <div class="peer-list" id="peer-list"><div class="empty-state">Searching for peers...</div></div>
         </div>
-        
+
         <div class="panel" id="chat-panel">
             <div id="chat-header">
-                <span>Chat with <span id="chat-with">-</span></span>
+                <div class="chat-with">
+                    <div class="peer-avatar" id="chat-avatar"><span>👤</span></div>
+                    <div>
+                        <div id="chat-with-name">-</div>
+                        <div id="chat-with-status" style="font-size:10px;color:var(--text-muted)"></div>
+                    </div>
+                </div>
                 <div>
-                    <button onclick="toggleSearch()">Search</button>
-                    <button onclick="closeChat()">Close</button>
+                    <button onclick="toggleSearch()">🔍</button>
+                    <button onclick="closeChat()">✕</button>
                 </div>
             </div>
             <div class="search-box" id="search-box">
                 <input type="text" id="search-input" placeholder="Search messages...">
                 <button onclick="searchMessages()">Find</button>
             </div>
+            <div class="pinned-bar" id="pinned-bar"></div>
             <div id="typing-indicator" class="typing-indicator"></div>
             <div id="chat-messages"></div>
             <div id="chat-input">
@@ -100,7 +183,22 @@
             </div>
         </div>
     </div>
-    
+
+    <!-- Модалка статуса -->
+    <div class="status-modal" id="status-modal">
+        <div class="status-box">
+            <h3>Set Your Status</h3>
+            <div class="status-options">
+                <div class="status-option" onclick="setStatus('online')"><span class="status-dot online"></span><span>Online</span></div>
+                <div class="status-option" onclick="setStatus('away')"><span class="status-dot away"></span><span>Away</span></div>
+                <div class="status-option" onclick="setStatus('busy')"><span class="status-dot busy"></span><span>Busy</span></div>
+                <div class="status-option" onclick="setStatus('offline')"><span class="status-dot offline"></span><span>Offline</span></div>
+            </div>
+            <input type="text" id="status-message-input" placeholder="Status message (optional)" style="width:100%;padding:10px;margin-top:15px;border:none;border-radius:5px;background:var(--bg-input);color:var(--text-primary)" oninput="setStatusMessage(this.value)">
+            <button onclick="hideStatusModal()" style="width:100%;padding:10px;margin-top:10px;border:none;border-radius:5px;background:var(--accent);color:white;cursor:pointer">Done</button>
+        </div>
+    </div>
+
     <div class="transfer-modal" id="transfer-modal">
         <div class="transfer-box">
             <div id="transfer-name">Transferring...</div>
@@ -108,161 +206,47 @@
             <div id="transfer-status">0%</div>
         </div>
     </div>
-    <div class="auth-modal" id="auth-modal">
-        <div class="auth-box">
-            <div id="auth-title">Authentication Request</div>
-            <div id="auth-peer">From: <span id="auth-peer-name">-</span></div>
-            <div id="auth-secret-display">Enter secret to trust:</div>
-            <input type="text" id="auth-secret-input" placeholder="Enter shared secret">
-            <div style="margin-top:15px">
-                <button class="accept" onclick="acceptAuth()">Accept</button>
-                <button class="reject" onclick="rejectAuth()">Reject</button>
-            </div>
-        </div>
-    </div>
+    <div class="context-menu" id="context-menu"></div>
     <div id="notification"></div>
 
     <script>
-        // Состояние приложения
-        let myId, myPort, myName; // Мои данные - заполняются при старте
-        let currentChat = null; // С кем сейчас ведём беседу
-        let ws; // WebSocket соединение с сервером
-        let pollInterval; // Таймер для polling (фоллбэк если WebSocket не работает)
-        let typingTimeout; // Таймер для отправки "печатает..." - дебаунс
-        let deliveredMessages = new Set(); // Множество доставленных сообщений
-        
-        // UI ссылки - кэшируем чтобы не искать каждый раз
+        let myId, myPort, myName;
+        let currentChat = null;
+        let ws;
+        let typingTimeout;
+        let deliveredMessages = new Set();
+        let readMessages = new Set();
         const messagesDiv = document.getElementById('chat-messages');
-        const chatWithSpan = document.getElementById('chat-with');
-        const typingDiv = document.getElementById('typing-indicator');
-        const activeTransfers = new Map(); // Активные передачи файлов
-        const peers = {}; // Кэш пиров
+        const activeTransfers = new Map();
+        const peers = {};
 
-        /**
-         * Установка WebSocket соединения.
-         * Используем wss если HTTPS, иначе ws.
-         * При закрытии - пытаемся переподключиться через 3 секунды.
-         * 
-         * Это fallback механизм - если WebSocket не работает, клиент не умрёт.
-         */
         function connectWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             ws = new WebSocket(protocol + '//' + window.location.host + '/ws');
-            
+
             ws.onopen = () => {
                 document.getElementById('connection-status').textContent = 'Connected';
-                document.getElementById('connection-status').style.color = '#4CAF50';
+                document.getElementById('connection-status').style.color = 'var(--status-online)';
             };
-            
             ws.onclose = () => {
                 document.getElementById('connection-status').textContent = 'Disconnected - Reconnecting...';
-                document.getElementById('connection-status').style.color = '#e94560';
+                document.getElementById('connection-status').style.color = 'var(--accent-red)';
                 setTimeout(connectWebSocket, 3000);
             };
-            
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
-                if (data.type === 'MESSAGE') {
-                    handleWsMessage(data.message);
-                } else if (data.type === 'DELIVERED') {
-                    markDelivered(data.messageId);
-                } else if (data.type === 'TYPING') {
-                    if (data.peerId === currentChat) {
-                        typingDiv.textContent = peers[data.peerId]?.name || 'Someone' + ' is typing...';
-                    }
-                } else if (data.type === 'TYPING_STOPPED') {
-                    typingDiv.textContent = '';
-                } else if (data.type === 'AUTH_REQUEST') {
-                    showAuthModal(data.peerId, data.peerName, data.token);
-                } else if (data.type === 'AUTH_RESPONSE') {
-                    if (data.approved) {
-                        showNotification('Peer trusted successfully');
-                        refreshPeers();
-                    } else {
-                        showNotification('Auth request rejected');
-                    }
+                switch(data.type) {
+                    case 'MESSAGE': handleWsMessage(data.message); break;
+                    case 'DELIVERED': markDelivered(data.messageId); break;
+                    case 'MESSAGE_READ': markRead(data.messageId, data.readerId); break;
+                    case 'TYPING': typingDiv.textContent = (peers[data.peerId]?.name || 'Someone') + ' is typing...'; break;
+                    case 'TYPING_STOPPED': typingDiv.textContent = ''; break;
+                    case 'STATUS_CHANGE': updatePeerStatus(data.peerId, data.status, data.statusMessage); break;
+                    case 'MESSAGE_EDITED': reloadMessages(); break;
+                    case 'MESSAGE_DELETED': reloadMessages(); break;
+                    case 'REACTION_ADDED': reloadMessages(); break;
                 }
             };
-        }
-
-        let pendingAuthToken = null;
-        let pendingAuthPeerId = null;
-
-        function showAuthModal(peerId, peerName, token) {
-            pendingAuthToken = token;
-            pendingAuthPeerId = peerId;
-            document.getElementById('auth-peer-name').textContent = peerName;
-            document.getElementById('auth-modal').style.display = 'flex';
-        }
-
-        async function acceptAuth() {
-            const secret = document.getElementById('auth-secret-input').value;
-            if (!secret) return alert('Enter secret');
-            
-            await fetch('/api/auth/respond', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ peerId: pendingAuthPeerId, token: pendingAuthToken, approved: true })
-            });
-            
-            document.getElementById('auth-modal').style.display = 'none';
-            document.getElementById('auth-secret-input').value = '';
-        }
-
-        async function rejectAuth() {
-            await fetch('/api/auth/respond', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ peerId: pendingAuthPeerId, token: pendingAuthToken, approved: false })
-            });
-            
-            document.getElementById('auth-modal').style.display = 'none';
-            document.getElementById('auth-secret-input').value = '';
-        }
-
-        async function requestAuth(peerId) {
-            const secret = prompt('Enter shared secret to authenticate with peer:');
-            if (!secret || secret.length < 4) {
-                alert('Secret must be at least 4 characters');
-                return;
-            }
-            
-            const res = await fetch('/api/auth/request', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ peerId: peerId, secret: secret })
-            });
-            const data = await res.json();
-            
-            if (data.error) {
-                alert(data.error);
-            } else {
-                showNotification('Auth request sent');
-            }
-        }
-
-        function handleWsMessage(msg) {
-            if (msg.senderId === currentChat) {
-                addMessage(msg.senderName, msg.content, msg.time || '', false, msg.fileId, msg.fileName, msg.fileType, msg.fileSize);
-            } else {
-                showNotification('Message from ' + msg.senderName);
-            }
-            if (msg.id) {
-                fetch('/api/send', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ type: 'MESSAGE', senderId: myId, senderName: myName, targetId: msg.senderId, content: msg.content, id: msg.id })
-                }).catch(() => {});
-            }
-        }
-
-        function markDelivered(msgId) {
-            deliveredMessages.add(msgId);
-            document.querySelectorAll('.message.mine .time').forEach(el => {
-                if (!el.textContent.includes('✓')) {
-                    el.textContent = el.textContent.replace(/(\d{2}:\d{2})/, '$1 ✓');
-                }
-            });
         }
 
         async function start() {
@@ -277,65 +261,63 @@
             await fetch('/api/set-name?name=' + encodeURIComponent(myName), { method: 'POST' });
 
             document.getElementById('my-id').textContent = myId;
-            document.getElementById('my-port').textContent = myPort;
+            document.getElementById('my-status').textContent = 'Online';
+            document.getElementById('my-status').style.color = 'var(--status-online)';
             document.getElementById('setup').style.display = 'none';
 
             connectWebSocket();
-            pollInterval = setInterval(pollAll, 500);
-            refreshPeers();
             setInterval(refreshPeers, 3000);
-        }
-
-        async function pollAll() {
-            pollMessages();
-            pollTransfers();
-        }
-
-        async function pollTransfers() {
-            try {
-                const res = await fetch('/api/transfer-progress');
-                const transfers = await res.json();
-                transfers.forEach(t => {
-                    const percent = Math.round((t.received / t.total) * 100);
-                    if (t.complete) {
-                        hideTransfer(t.transferId);
-                    } else {
-                        showTransfer(t.transferId, 'File Transfer', percent);
-                    }
-                });
-            } catch(e) {}
+            refreshPeers();
         }
 
         async function refreshPeers() {
-            const res = await fetch('/api/peers');
-            const peersData = await res.json();
-            Object.values(peersData).forEach(p => {
-                peers[p.id] = p;
-            });
-            const peerArray = Object.values(peersData).filter(p => p.id !== myId && p.name !== 'Unknown');
-            
-            const list = document.getElementById('peer-list');
-            if (peerArray.length === 0) {
-                list.innerHTML = '<div class="empty-state">No peers found.<br>Start another instance on your network.</div>';
-                return;
+            try {
+                const res = await fetch('/api/peers');
+                const peersData = await res.json();
+                Object.values(peersData).forEach(p => { peers[p.id] = p; });
+
+                const peerArray = Object.values(peersData).filter(p => p.id !== myId && p.name !== 'Unknown');
+                const list = document.getElementById('peer-list');
+
+                if (peerArray.length === 0) {
+                    list.innerHTML = '<div class="empty-state">No peers found.<br>Start another instance on your network.</div>';
+                    return;
+                }
+
+                list.innerHTML = peerArray.map(p => {
+                    const status = p.status || (p.connected ? 'online' : 'offline');
+                    const avatarHtml = p.avatarUrl ? `<img src="${p.avatarUrl}" onerror="this.parentElement.innerHTML='👤'">` : '👤';
+                    return `<div class="peer ${currentChat === p.id ? 'active' : ''}" onclick="selectChat('${p.id}', '${escapeHtml(p.name)}')">
+                        <div class="peer-avatar">${avatarHtml}</div>
+                        <div class="peer-info">
+                            <div class="peer-name"><span class="status-dot ${status}"></span>${escapeHtml(p.name)} ${p.trusted ? '<span class="trusted-badge">Trusted</span>' : ''}</div>
+                            <div class="peer-id">${p.address}:${p.port}</div>
+                            ${p.statusMessage ? `<div class="peer-status-msg">${escapeHtml(p.statusMessage)}</div>` : ''}
+                        </div>
+                    </div>`;
+                }).join('');
+            } catch(e) {}
+        }
+
+        function updatePeerStatus(peerId, status, statusMessage) {
+            if (peers[peerId]) {
+                peers[peerId].status = status;
+                peers[peerId].statusMessage = statusMessage;
+                refreshPeers();
             }
-            
-            list.innerHTML = peerArray.map(p => `
-                <div class="peer ${currentChat === p.id ? 'active' : ''}" onclick="selectChat('${p.id}', '${escapeHtml(p.name)}')">
-                    <div class="peer-name">
-                        <span class="peer-status online"></span>${escapeHtml(p.name)}
-                        ${p.trusted ? '<span class="trusted-badge">Trusted</span>' : ''}
-                    </div>
-                    <div class="peer-id">${p.id} @ ${p.address}:${p.port}</div>
-                    ${!p.trusted ? '<button style="margin-top:5px;padding:3px 8px;background:#4CAF50;color:white;border:none;border-radius:3px;cursor:pointer;font-size:10px" onclick="event.stopPropagation();requestAuth(\''+p.id+'\')">Trust</button>' : ''}
-                </div>
-            `).join('');
         }
 
         function selectChat(peerId, peerName) {
             currentChat = peerId;
-            chatWithSpan.textContent = peerName;
+            document.getElementById('chat-with-name').textContent = peerName;
+            document.getElementById('chat-with-status').textContent = peers[peerId]?.statusMessage || '';
             document.getElementById('chat-panel').style.display = 'flex';
+
+            const p = peers[peerId];
+            if (p && p.avatarUrl) {
+                document.getElementById('chat-avatar').innerHTML = `<img src="${p.avatarUrl}" onerror="this.parentElement.innerHTML='👤'">`;
+            }
+
             messagesDiv.innerHTML = '';
             loadHistory();
             refreshPeers();
@@ -345,23 +327,117 @@
             if (!currentChat) return;
             const res = await fetch('/api/messages/' + currentChat);
             const messages = await res.json();
+
             messagesDiv.innerHTML = '';
-            messages.forEach(m => addMessage(m.senderName, m.content, formatTime(m.timestamp), m.senderId === myId, m.fileId, m.fileName, m.fileType, m.fileSize));
+            const pinned = messages.filter(m => m.pinned);
+            const regular = messages.filter(m => !m.pinned);
+
+            if (pinned.length > 0) {
+                const bar = document.getElementById('pinned-bar');
+                bar.classList.add('has-pinned');
+                bar.innerHTML = '📌 ' + pinned.map(m => escapeHtml(m.content)).join(' | ');
+            }
+
+            [...pinned, ...regular].forEach(m => addMessage(m, false));
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
 
-        async function pollMessages() {
-            try {
-                const res = await fetch('/api/pending-messages');
-                const messages = await res.json();
-                messages.forEach(msg => {
-                    if (msg.senderId === currentChat) {
-                        addMessage(msg.senderName, msg.content, msg.time || '', false, msg.fileId, msg.fileName, msg.fileType, msg.fileSize);
-                    } else {
-                        showNotification('Message from ' + msg.senderName);
-                    }
-                });
-            } catch(e) {}
+        function addMessage(m, append = true) {
+            const div = document.createElement('div');
+            div.className = 'message ' + (m.senderId === myId ? 'mine' : 'other') + (m.deleted ? ' deleted' : '');
+            div.dataset.msgId = m.id;
+
+            const time = m.timestamp ? formatTime(m.timestamp) : '';
+            const statusIcon = m.senderId === myId ? getStatusIcon(m) : '';
+            const editedLabel = m.edited ? '<span class="edited-label">(edited)</span>' : '';
+
+            let reactionsHtml = '';
+            if (m.reactions) {
+                try {
+                    const reactions = JSON.parse(m.reactions);
+                    const grouped = {};
+                    Object.entries(reactions).forEach(([peerId, emoji]) => {
+                        if (!grouped[emoji]) grouped[emoji] = [];
+                        grouped[emoji].push(peerId);
+                    });
+                    reactionsHtml = '<div class="reactions">' + Object.entries(grouped).map(([emoji, peersList]) =>
+                        `<span class="reaction ${peersList.includes(myId) ? 'own' : ''}">${emoji}${peersList.length > 1 ? ' ' + peersList.length : ''}</span>`
+                    ).join('') + '</div>';
+                } catch(e) {}
+            }
+
+            const actionsHtml = m.senderId === myId ? `<div class="actions">
+                <button onclick="showEmojiPicker('${m.id}')" title="React">😊</button>
+                <button onclick="editMessage('${m.id}')" title="Edit">✏️</button>
+                <button onclick="pinMessage('${m.id}')" title="Pin">📌</button>
+                <button onclick="deleteMessage('${m.id}')" title="Delete" class="danger">🗑</button>
+            </div>` : `<div class="actions"><button onclick="showEmojiPicker('${m.id}')" title="React">😊</button></div>`;
+
+            let fileHtml = '';
+            if (m.fileId) {
+                const isImage = m.fileType && m.fileType.startsWith('image/');
+                fileHtml = `<div class="file-msg" onclick="window.open('/api/files/${m.fileId}', '_blank')">
+                    ${isImage ? `<img src="/api/files/${m.fileId}/thumbnail" onerror="this.outerHTML='<div class=icon>📄</div>'">` : '<div class="icon">📄</div>'}
+                    <div class="info"><div class="name">${escapeHtml(m.fileName || 'File')}</div><div class="size">${formatSize(m.fileSize)}</div></div>
+                </div>`;
+            }
+
+            const content = m.deleted ? '<i>[deleted]</i>' : escapeHtml(m.content);
+
+            div.innerHTML = `
+                ${actionsHtml}
+                ${m.senderId !== myId ? '<div class="sender">' + escapeHtml(m.senderName) + '</div>' : ''}
+                <div class="content">${content}</div>
+                ${fileHtml}
+                ${reactionsHtml}
+                <div class="meta">
+                    ${editedLabel}
+                    <span class="time">${time}</span>
+                    <span class="status">${statusIcon}</span>
+                </div>
+            `;
+
+            const emojiPicker = document.createElement('div');
+            emojiPicker.className = 'emoji-picker';
+            emojiPicker.id = 'emoji-' + m.id;
+            ['👍','❤️','😂','😮','😢','🔥'].forEach(emoji => {
+                const btn = document.createElement('button');
+                btn.textContent = emoji;
+                btn.onclick = () => addReaction(m.id, emoji);
+                emojiPicker.appendChild(btn);
+            });
+            div.appendChild(emojiPicker);
+
+            if (append) messagesDiv.appendChild(div);
+            else messagesDiv.insertBefore(div, messagesDiv.firstChild);
+        }
+
+        function getStatusIcon(m) {
+            if (m.deleted) return '';
+            if (m.read) return '✓✓';
+            if (m.delivered) return '✓';
+            return '⏳';
+        }
+
+        function markDelivered(msgId) { deliveredMessages.add(msgId); reloadMessages(); }
+        function markRead(msgId, readerId) { readMessages.add(msgId); reloadMessages(); }
+
+        async function reloadMessages() {
+            if (!currentChat) return;
+            const res = await fetch('/api/messages/' + currentChat);
+            const messages = await res.json();
+            messagesDiv.innerHTML = '';
+            const pinned = messages.filter(m => m.pinned);
+            const regular = messages.filter(m => !m.pinned);
+            if (pinned.length > 0) {
+                const bar = document.getElementById('pinned-bar');
+                bar.classList.add('has-pinned');
+                bar.innerHTML = '📌 ' + pinned.map(m => escapeHtml(m.content)).join(' | ');
+            } else {
+                document.getElementById('pinned-bar').classList.remove('has-pinned');
+            }
+            [...pinned, ...regular].forEach(m => addMessage(m, false));
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
 
         async function sendMessage() {
@@ -369,22 +445,55 @@
             const text = input.value.trim();
             if (!text || !currentChat) return;
 
-            const time = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-
             const res = await fetch('/api/send', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ type: 'MESSAGE', senderId: myId, senderName: myName, targetId: currentChat, content: text, time: time })
+                body: JSON.stringify({ type: 'MESSAGE', senderId: myId, senderName: myName, targetId: currentChat, content: text })
             });
-            const data = await res.json();
-            const msgId = data?.id || Date.now().toString();
 
-            addMessage(myName, text, time, true, null, null, null, null, msgId);
             input.value = '';
-            
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'TYPING_STOPPED', targetId: currentChat }));
             }
+        }
+
+        async function editMessage(msgId) {
+            const msg = document.querySelector(`[data-msg-id="${msgId}"] .content`);
+            if (!msg) return;
+
+            const current = msg.textContent;
+            const newText = prompt('Edit message:', current);
+            if (!newText || newText === current) return;
+
+            await fetch('/api/messages/' + msgId, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: newText })
+            });
+        }
+
+        async function deleteMessage(msgId) {
+            if (!confirm('Delete this message?')) return;
+            await fetch('/api/messages/' + msgId, { method: 'DELETE' });
+        }
+
+        async function pinMessage(msgId) {
+            await fetch('/api/messages/' + msgId + '/pin', { method: 'POST', body: '{}' });
+        }
+
+        function showEmojiPicker(msgId) {
+            document.querySelectorAll('.emoji-picker').forEach(el => el.classList.remove('show'));
+            const picker = document.getElementById('emoji-' + msgId);
+            if (picker) picker.classList.toggle('show');
+        }
+
+        async function addReaction(msgId, emoji) {
+            await fetch('/api/messages/' + msgId + '/react', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ emoji })
+            });
+            document.querySelectorAll('.emoji-picker').forEach(el => el.classList.remove('show'));
         }
 
         function onInputFocus() {
@@ -421,28 +530,15 @@
                 await fetch('/api/send-file', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        targetId: currentChat,
-                        fileId: result.fileId,
-                        fileName: file.name,
-                        fileSize: file.size,
-                        filePath: fileInfo.filePath
-                    })
+                    body: JSON.stringify({ targetId: currentChat, fileId: result.fileId, fileName: file.name, fileSize: file.size, filePath: fileInfo.filePath })
                 });
-
-                const time = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
 
                 await fetch('/api/send', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        type: 'MESSAGE', senderId: myId, senderName: myName, targetId: currentChat,
-                        content: '[File] ' + file.name, fileId: result.fileId, fileName: file.name,
-                        fileType: file.type, fileSize: file.size, time: time
-                    })
+                    body: JSON.stringify({ type: 'MESSAGE', senderId: myId, senderName: myName, targetId: currentChat, content: '[File] ' + file.name, fileId: result.fileId, fileName: file.name, fileType: file.type, fileSize: file.size })
                 });
 
-                addMessage(myName, '[File] ' + file.name, time, true, result.fileId, file.name, file.type, file.size);
                 hideTransfer(transferId);
                 showNotification('File sent: ' + file.name);
             } catch(e) {
@@ -452,33 +548,13 @@
             event.target.value = '';
         }
 
-        function addMessage(sender, text, time, isMine, fileId, fileName, fileType, fileSize, msgId) {
-            const div = document.createElement('div');
-            div.className = 'message ' + (isMine ? 'mine' : 'other');
-            if (msgId) div.dataset.msgId = msgId;
-            
-            let fileHtml = '';
-            if (fileId) {
-                const isImage = fileType && fileType.startsWith('image/');
-                fileHtml = `<div class="file-msg" onclick="window.open('/api/files/${fileId}', '_blank')">
-                    ${isImage ? `<img src="/api/files/${fileId}/thumbnail" onerror="this.outerHTML='<div class=icon>📄</div>'">` : '<div class="icon">📄</div>'}
-                    <div class="info"><div class="name">${escapeHtml(fileName || 'File')}</div><div class="size">${formatSize(fileSize)}</div></div>
-                </div>`;
-            }
-
-            const checkMark = isMine ? ' ✓' : '';
-            div.innerHTML = `${!isMine ? '<div class="sender">'+escapeHtml(sender)+'</div>' : ''}<div>${escapeHtml(text)}</div>${fileHtml}<div class="time">${time}${checkMark}</div>`;
-            messagesDiv.appendChild(div);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        }
-
-        function closeChat() {
-            currentChat = null;
-            typingDiv.textContent = '';
-            document.getElementById('chat-panel').style.display = 'none';
-            document.getElementById('search-box').style.display = 'none';
-            messagesDiv.innerHTML = '';
-            refreshPeers();
+        async function searchMessages() {
+            const query = document.getElementById('search-input').value.trim();
+            if (!query || !currentChat) return;
+            const res = await fetch('/api/search?q=' + encodeURIComponent(query));
+            const data = await res.json();
+            messagesDiv.innerHTML = '<div style="padding:10px;color:var(--text-secondary)">Search results (' + (data.totalElements || 0) + '):</div>';
+            (data.results || []).filter(m => m.peerId === currentChat).forEach(m => addMessage(m, false));
         }
 
         function toggleSearch() {
@@ -486,59 +562,60 @@
             box.style.display = box.style.display === 'none' ? 'flex' : 'none';
         }
 
-        async function searchMessages() {
-            const query = document.getElementById('search-input').value.trim();
-            if (!query || !currentChat) return;
-            
-            const res = await fetch('/api/search?q=' + encodeURIComponent(query));
-            const messages = await res.json();
-            
-            messagesDiv.innerHTML = '<div style="padding:10px;color:#888">Search results:</div>';
-            messages.filter(m => m.peerId === currentChat).forEach(m => 
-                addMessage(m.senderName, m.content, formatTime(m.timestamp), m.senderId === myId, m.fileId, m.fileName, m.fileType, m.fileSize)
-            );
-            if (messages.filter(m => m.peerId === currentChat).length === 0) {
-                messagesDiv.innerHTML += '<div style="padding:10px;color:#888">No results found.</div>';
-            }
+        function closeChat() {
+            currentChat = null;
+            document.getElementById('chat-panel').style.display = 'none';
+            document.getElementById('search-box').style.display = 'none';
+            messagesDiv.innerHTML = '';
+            refreshPeers();
         }
 
-        function showNotification(text) {
-            const notif = document.getElementById('notification');
-            notif.textContent = text;
-            notif.style.display = 'block';
-            setTimeout(() => notif.style.display = 'none', 3000);
+        function showStatusModal() { document.getElementById('status-modal').style.display = 'flex'; }
+        function hideStatusModal() { document.getElementById('status-modal').style.display = 'none'; }
+
+        async function setStatus(status) {
+            await fetch('/api/status', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status })
+            });
+            document.querySelectorAll('.status-option').forEach(el => el.classList.remove('active'));
+            event.target.closest('.status-option').classList.add('active');
+            document.getElementById('my-status').textContent = status.charAt(0).toUpperCase() + status.slice(1);
+            document.getElementById('my-status').style.color = 'var(--status-' + status + ')';
+        }
+
+        async function setStatusMessage(msg) {
+            await fetch('/api/status', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: 'online', message: msg })
+            });
         }
 
         function showTransfer(id, name, percent) {
+            document.getElementById('transfer-modal').style.display = 'flex';
             document.getElementById('transfer-name').textContent = name;
             document.getElementById('transfer-progress').style.width = percent + '%';
             document.getElementById('transfer-status').textContent = percent + '%';
-            document.getElementById('transfer-modal').style.display = 'flex';
+        }
+        function hideTransfer() { document.getElementById('transfer-modal').style.display = 'none'; }
+
+        function showNotification(msg) {
+            const n = document.getElementById('notification');
+            n.textContent = msg; n.style.display = 'block';
+            setTimeout(() => n.style.display = 'none', 3000);
         }
 
-        function hideTransfer(id) {
-            document.getElementById('transfer-modal').style.display = 'none';
-        }
+        function escapeHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+        function formatSize(bytes) { return bytes > 1048576 ? (bytes/1048576).toFixed(1)+' MB' : (bytes/1024).toFixed(1)+' KB'; }
+        function formatTime(ts) { if (!ts) return ''; try { const d = new Date(ts.year||2024, (ts.monthValue||1)-1, ts.dayOfMonth||1, ts.hour||0, ts.minute||0); return d.toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit',hour12:false}); } catch(e) { return ''; } }
 
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        function formatSize(bytes) {
-            if (!bytes) return '';
-            if (bytes < 1024) return bytes + ' B';
-            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-            if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-            return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
-        }
-
-        function formatTime(ts) {
-            if (!ts) return '';
-            const d = new Date(ts);
-            return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-        }
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.emoji-picker') && !e.target.closest('.actions')) {
+                document.querySelectorAll('.emoji-picker').forEach(el => el.classList.remove('show'));
+            }
+        });
     </script>
 </body>
 </html>

@@ -37,6 +37,31 @@ public class MessageEntity {
     @Column(name = "delivered")
     private boolean delivered;
 
+    @Column(name = "delivered_at")
+    private LocalDateTime deliveredAt;
+
+    @Column(name = "read_status")
+    private boolean readStatus;
+
+    @Column(name = "read_at")
+    private LocalDateTime readAt;
+
+    @Column(name = "edited")
+    private boolean edited;
+
+    @Column(name = "edited_at")
+    private LocalDateTime editedAt;
+
+    /** Реакции в формате JSON: {"peer1":"👍","peer2":"❤️"} */
+    @Column(name = "reactions", columnDefinition = "TEXT")
+    private String reactions;
+
+    @Column(name = "pinned")
+    private boolean pinned;
+
+    @Column(name = "deleted")
+    private boolean deleted;
+
     public MessageEntity() {
         this.id = UUID.randomUUID().toString();
     }
@@ -70,4 +95,28 @@ public class MessageEntity {
 
     public boolean isDelivered() { return delivered; }
     public void setDelivered(boolean delivered) { this.delivered = delivered; }
+
+    public LocalDateTime getDeliveredAt() { return deliveredAt; }
+    public void setDeliveredAt(LocalDateTime deliveredAt) { this.deliveredAt = deliveredAt; }
+
+    public boolean isReadStatus() { return readStatus; }
+    public void setReadStatus(boolean readStatus) { this.readStatus = readStatus; }
+
+    public LocalDateTime getReadAt() { return readAt; }
+    public void setReadAt(LocalDateTime readAt) { this.readAt = readAt; }
+
+    public boolean isEdited() { return edited; }
+    public void setEdited(boolean edited) { this.edited = edited; }
+
+    public LocalDateTime getEditedAt() { return editedAt; }
+    public void setEditedAt(LocalDateTime editedAt) { this.editedAt = editedAt; }
+
+    public String getReactions() { return reactions; }
+    public void setReactions(String reactions) { this.reactions = reactions; }
+
+    public boolean isPinned() { return pinned; }
+    public void setPinned(boolean pinned) { this.pinned = pinned; }
+
+    public boolean isDeleted() { return deleted; }
+    public void setDeleted(boolean deleted) { this.deleted = deleted; }
 }

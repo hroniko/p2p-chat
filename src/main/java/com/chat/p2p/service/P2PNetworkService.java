@@ -71,6 +71,11 @@ public class P2PNetworkService {
     private final ExecutorService transferExecutor = Executors.newFixedThreadPool(TRANSFER_THREADS); // Пул для файлов - 8 потоков, не больше
     private final CopyOnWriteArrayList<NetworkListener> listeners = new CopyOnWriteArrayList<>(); // Слушатели сообщений
 
+    /** Получить список слушателей (для отправки событий из контроллеров) */
+    public CopyOnWriteArrayList<NetworkListener> getListeners() {
+        return listeners;
+    }
+
     private final CopyOnWriteArrayList<FileTransferListener> fileListeners = new CopyOnWriteArrayList<>(); // Слушатели файлов
 
     @PostConstruct
@@ -698,6 +703,18 @@ public class P2PNetworkService {
         this.peerName = name;
     }
 
+    /** Установить статус пира (online, away, busy, offline) */
+    public void setStatus(String status) {
+        // TODO: отправить статус другим пирам через TCP
+        log.info("Status changed to: {}", status);
+    }
+
+    /** Установить сообщение статуса */
+    public void setStatusMessage(String message) {
+        // TODO: отправить другим пирам
+        log.info("Status message: {}", message);
+    }
+
     public String getPeerId() {
         return peerId;
     }
@@ -943,6 +960,13 @@ public class P2PNetworkService {
         default void onTypingStopped(String peerId) {}
         default void onAuthRequest(String peerId, String token, String secret) {}
         default void onAuthResponse(String peerId, String token, boolean approved) {}
+
+        // Новые события: статусы, реакции, редактирование
+        default void onPeerStatusChanged(String peerId, String status, String statusMessage) {}
+        default void onMessageRead(String messageId, String readerId) {}
+        default void onMessageEdited(String messageId) {}
+        default void onMessageDeleted(String messageId) {}
+        default void onReactionAdded(String messageId, String peerId, String emoji) {}
     }
 
     public interface FileTransferListener {

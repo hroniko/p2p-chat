@@ -37,7 +37,7 @@ public class DatabaseService {
     }
 
     public List<MessageDto> getMessagesDto(String peerId) {
-        return messageRepository.findByPeerIdOrderByTimestampAsc(peerId)
+        return messageRepository.findByPeerIdAndDeletedFalseOrderByTimestampAsc(peerId)
                 .stream()
                 .map(MessageDto::fromEntity)
                 .collect(Collectors.toList());
@@ -134,6 +134,11 @@ public class DatabaseService {
         public String type;
         public String fileId;
         public LocalDateTime timestamp;
+        public boolean delivered;
+        public boolean read;
+        public boolean edited;
+        public String reactions;
+        public boolean pinned;
 
         public static MessageDto fromEntity(MessageEntity entity) {
             MessageDto dto = new MessageDto();
@@ -145,6 +150,11 @@ public class DatabaseService {
             dto.type = entity.getType();
             dto.fileId = entity.getFileId();
             dto.timestamp = entity.getTimestamp();
+            dto.delivered = entity.isDelivered();
+            dto.read = entity.isReadStatus();
+            dto.edited = entity.isEdited();
+            dto.reactions = entity.getReactions();
+            dto.pinned = entity.isPinned();
             return dto;
         }
 

@@ -65,6 +65,31 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             public void onAuthResponse(String peerId, String token, boolean approved) {
                 broadcastAuthResponse(peerId, token, approved);
             }
+
+            @Override
+            public void onPeerStatusChanged(String peerId, String status, String statusMessage) {
+                broadcastStatus(peerId, status, statusMessage);
+            }
+
+            @Override
+            public void onMessageRead(String messageId, String readerId) {
+                broadcastMessageRead(messageId, readerId);
+            }
+
+            @Override
+            public void onMessageEdited(String messageId) {
+                broadcastMessageEdited(messageId);
+            }
+
+            @Override
+            public void onMessageDeleted(String messageId) {
+                broadcastMessageDeleted(messageId);
+            }
+
+            @Override
+            public void onReactionAdded(String messageId, String peerId, String emoji) {
+                broadcastReaction(messageId, peerId, emoji);
+            }
         });
     }
 
@@ -239,5 +264,78 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 log.warn("Failed to send auth response to session: {}", session.getId());
             }
         });
+    }
+
+    // === Новые события: статусы, реакции, редактирование ===
+
+    private void broadcastStatus(String peerId, String status, String statusMessage) {
+        try {
+            var payload = Map.of(
+                "type", "STATUS_CHANGE",
+                "peerId", peerId,
+                "status", status,
+                "statusMessage", statusMessage != null ? statusMessage : ""
+            );
+            TextMessage msg = new TextMessage(objectMapper.writeValueAsString(payload));
+            sessions.values().forEach(s -> safeSend(s, msg));
+        } catch (IOException ignored) {}
+    }
+
+    private void broadcastMessageRead(String messageId, String readerId) {
+        try {
+            var payload = Map.of(
+                "type", "MESSAGE_READ",
+                "messageId", messageId,
+                "readerId", readerId
+            );
+            TextMessage msg = new TextMessage(objectMapper.writeValueAsString(payload));
+            sessions.values().forEach(s -> safeSend(s, msg));
+        } catch (IOException ignored) {}
+    }
+
+    private void broadcastMessageEdited(String messageId) {
+        try {
+            var payload = Map.of(
+                "type", "MESSAGE_EDITED",
+                "messageId", messageId
+            );
+            TextMessage msg = new TextMessage(objectMapper.writeValueAsString(payload));
+            sessions.values().forEach(s -> safeSend(s, msg));
+        } catch (IOException ignored) {}
+    }
+
+    private void broadcastMessageDeleted(String messageId) {
+        try {
+            var payload = Map.of(
+                "type", "MESSAGE_DELETED",
+                "messageId", messageId
+            );
+            TextMessage msg = new TextMessage(objectMapper.writeValueAsString(payload));
+            sessions.values().forEach(s -> safeSend(s, msg));
+        } catch (IOException ignored) {}
+    }
+
+    private void broadcastReaction(String messageId, String peerId, String emoji) {
+        try {
+            var payload = Map.of(
+                "type", "REACTION_ADDED",
+                "messageId", messageId,
+                "peerId", peerId,
+                "emoji", emoji
+            );
+            TextMessage msg = new TextMessage(objectMapper.writeValueAsString(payload));
+            sessions.values().forEach(s -> safeSend(s, msg));
+        } catch (IOException ignored) {}
+    }
+
+    /** Безопасная отправка сообщения в сессию */
+    private void safeSend(WebSocketSession session, TextMessage message) {
+        try {
+            if (session.isOpen()) {
+                session.sendMessage(message);
+            }
+        } catch (IOException e) {
+            log.warn("Failed to send to session {}: {}", session.getId(), e.getMessage());
+        }
     }
 }
