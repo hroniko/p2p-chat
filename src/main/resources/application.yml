@@ -33,3 +33,22 @@ chat:
     queue-size: 64
     min-file-size: 10485760
     read-threads: 0
+  messages:
+    ttl-days: 90
+  files:
+    ttl-days: 30
+    max-total-size-mb: 5000
+
+logging:
+  level:
+    root: INFO
+    com.chat.p2p: DEBUG
+    org.springframework.web: WARN
+    org.hibernate: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/p2p-chat.log
+    max-size: 10MB
+    max-history: 30

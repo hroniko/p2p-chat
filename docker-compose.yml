@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  p2p-chat:
+    build: .
+    container_name: p2p-chat
+    ports:
+      - "8089:8089"    # HTTP/WebSocket
+      - "9090:9090"    # P2P TCP
+      - "45678:45678/udp"  # P2P UDP Discovery
+    volumes:
+      - p2p-data:/data
+    environment:
+      - TZ=UTC
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8089/api/info"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  p2p-data:
+    driver: local

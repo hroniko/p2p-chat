@@ -3,6 +3,10 @@ package com.chat.p2p.service;
 import com.chat.p2p.entity.MessageEntity;
 import com.chat.p2p.repository.MessageRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -74,12 +78,51 @@ public class DatabaseService {
         return messages.get(messages.size() - 1).getTimestamp();
     }
 
+    /**
+     * Поиск сообщений через SQL LIKE с пагинацией.
+     * @param query поисковый запрос
+     * @param page номер страницы (0-based)
+     * @param size размер страницы
+     */
+    public Page<MessageDto> searchMessages(String query, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "timestamp"));
+        Page<MessageEntity> result = messageRepository.searchByContent(query, pageable);
+        return result.map(MessageDto::fromEntity);
+    }
+
+    /**
+     * Поиск сообщений для конкретного пира через SQL LIKE.
+     */
+    public Page<MessageDto> searchMessages(String peerId, String query, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "timestamp"));
+        Page<MessageEntity> result = messageRepository.searchByContentAndPeer(peerId, query, pageable);
+        return result.map(MessageDto::fromEntity);
+    }
+
+    /**
+     * Legacy метод (без пагинации).
+     * @deprecated Используйте searchMessages с пагинацией
+     */
+    @Deprecated
     public List<MessageDto> searchMessages(String query) {
-        return messageRepository.findAll()
+        return messageRepository.searchByContent(query, PageRequest.of(0, 100))
                 .stream()
-                .filter(m -> m.getContent() != null && m.getContent().toLowerCase().contains(query.toLowerCase()))
                 .map(MessageDto::fromEntity)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Очистить старые сообщения (TTL).
+     */
+    public void deleteOlderThan(LocalDateTime before) {
+        messageRepository.deleteOlderThan(before);
+    }
+
+    /**
+     * Количество сообщений старше указанной даты.
+     */
+    public long countOlderThan(LocalDateTime before) {
+        return messageRepository.countByTimestampBefore(before);
     }
 
     public static class MessageDto {

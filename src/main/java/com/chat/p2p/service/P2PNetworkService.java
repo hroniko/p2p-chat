@@ -48,6 +48,12 @@ public class P2PNetworkService {
     @Value("${server.port:8089}")
     private int serverPort;
 
+    @Autowired
+    private EncryptionService encryptionService;
+
+    @Autowired
+    private KeyExchangeService keyExchangeService;
+
     private ServerSocket serverSocket;
     private DatagramSocket discoverySocket;
     private volatile boolean running = false; // Атомарная переменная - не для красоты, а для безопасности
@@ -60,17 +66,11 @@ public class P2PNetworkService {
     private final Map<String, AuthRequest> pendingAuthRequests = new ConcurrentHashMap<>(); // Ожидающие авторизации
     private final Set<String> trustedPeers = ConcurrentHashMap.newKeySet(); // Белый список. Свой в доску
     private final Map<String, String> peerSecrets = new ConcurrentHashMap<>(); // Shared secrets для шифрования
-    
-    private EncryptionService encryptionService; // E2E шифрование
-    
+
     private final ExecutorService executor = Executors.newCachedThreadPool(); // Потоковый пул общего назначения
     private final ExecutorService transferExecutor = Executors.newFixedThreadPool(TRANSFER_THREADS); // Пул для файлов - 8 потоков, не больше
     private final CopyOnWriteArrayList<NetworkListener> listeners = new CopyOnWriteArrayList<>(); // Слушатели сообщений
-    
-    @Autowired
-    public void setEncryptionService(EncryptionService encryptionService) {
-        this.encryptionService = encryptionService;
-    }
+
     private final CopyOnWriteArrayList<FileTransferListener> fileListeners = new CopyOnWriteArrayList<>(); // Слушатели файлов
 
     @PostConstruct
@@ -257,31 +257,76 @@ public class P2PNetworkService {
                         listener.onTypingStopped(typingPeerId);
                     }
                 } else if (msgType == 5) {
+                    // Legacy: Auth request с shared secret (оставляем для обратной совместимости)
                     String token = dis.readUTF();
                     String secret = dis.readUTF();
                     String requestingPeerId = dis.readUTF();
-                    log.info("Auth request from {} with token {}", requestingPeerId, token);
-                    
+                    log.info("Legacy auth request from {} with token {}", requestingPeerId, token);
+
                     pendingAuthRequests.put(requestingPeerId + ":" + token, new AuthRequest(requestingPeerId, token, secret));
                     for (NetworkListener listener : listeners) {
                         listener.onAuthRequest(requestingPeerId, token, secret);
                     }
-                } else if (msgType == 6) {
+                } else if (msgType == 7) {
+                    // ECDH Key Exchange: получаем public key пира
                     String token = dis.readUTF();
-                    boolean approved = dis.readBoolean();
-                    String respondingPeerId = dis.readUTF();
-                    log.info("Auth response from {}: {} for token {}", respondingPeerId, approved ? "approved" : "rejected", token);
-                    
-                    if (approved) {
-                        trustedPeers.add(respondingPeerId);
-                        Peer peer = discoveredPeers.get(respondingPeerId);
-                        if (peer != null) {
-                            peer.setTrusted(true);
-                            peer.setAuthToken(token);
+                    String peerPublicKeyBase64 = dis.readUTF();
+                    String requestingPeerId = dis.readUTF();
+                    log.info("ECDH key exchange request from {} with token {}", requestingPeerId, token);
+
+                    // Вычисляем shared secret
+                    String sharedSecret = keyExchangeService.computeSharedSecret(requestingPeerId, peerPublicKeyBase64);
+                    if (sharedSecret != null) {
+                        // Отправляем наш public key в ответ (type 8)
+                        String ourPublicKey = keyExchangeService.getLocalPublicKeyBase64();
+
+                        synchronized (conn.dos) {
+                            conn.dos.write(8);
+                            conn.dos.writeUTF(token);
+                            conn.dos.writeUTF(ourPublicKey);
+                            conn.dos.writeUTF(peerId);
+                            conn.dos.flush();
                         }
+
+                        // Используем shared secret для encryption service
+                        encryptionService.setPeerKey(requestingPeerId, sharedSecret);
+                        peerSecrets.put(requestingPeerId, sharedSecret);
+
+                        log.info("ECDH shared secret established with {}", requestingPeerId);
+                    } else {
+                        log.error("Failed to establish ECDH shared secret with {}", requestingPeerId);
                     }
-                    for (NetworkListener listener : listeners) {
-                        listener.onAuthResponse(respondingPeerId, token, approved);
+                } else if (msgType == 8) {
+                    // ECDH Key Exchange Response: получаем public key пира в ответ
+                    String token = dis.readUTF();
+                    String peerPublicKeyBase64 = dis.readUTF();
+                    String respondingPeerId = dis.readUTF();
+                    log.info("ECDH key exchange response from {} with token {}", respondingPeerId, token);
+
+                    // Вычисляем shared secret
+                    String sharedSecret = keyExchangeService.computeSharedSecret(respondingPeerId, peerPublicKeyBase64);
+                    if (sharedSecret != null) {
+                        encryptionService.setPeerKey(respondingPeerId, sharedSecret);
+                        peerSecrets.put(respondingPeerId, sharedSecret);
+
+                        AuthRequest authReq = pendingAuthRequests.get(respondingPeerId + ":" + token);
+                        if (authReq != null) {
+                            pendingAuthRequests.remove(respondingPeerId + ":" + token);
+                        }
+
+                        log.info("ECDH shared secret confirmed with {}", respondingPeerId);
+                        for (NetworkListener listener : listeners) {
+                            listener.onAuthResponse(respondingPeerId, token, true);
+                        }
+                    } else {
+                        log.error("Failed to confirm ECDH shared secret with {}", respondingPeerId);
+                    }
+
+                    trustedPeers.add(respondingPeerId);
+                    Peer peer = discoveredPeers.get(respondingPeerId);
+                    if (peer != null) {
+                        peer.setTrusted(true);
+                        peer.setAuthToken(token);
                     }
                 }
             }
@@ -665,6 +710,60 @@ public class P2PNetworkService {
         return new ConcurrentHashMap<>(discoveredPeers);
     }
 
+    /**
+     * Добавить пира вручную по адресу и порту.
+     * Альтернатива UDP broadcast и mDNS — работает через роутеры.
+     */
+    public void addManualPeer(String address, int port) {
+        // Проверяем, нет ли уже такого пира
+        for (Peer existing : discoveredPeers.values()) {
+            if (existing.getAddress().equals(address) && existing.getPort() == port) {
+                log.debug("Peer already exists: {}:{}", address, port);
+                return;
+            }
+        }
+
+        // Подключаемся к пиру
+        String key = address + ":" + port;
+        executor.submit(() -> {
+            try {
+                Socket socket = new Socket(address, port);
+                socket.setKeepAlive(true);
+                socket.setTcpNoDelay(true);
+
+                Connection conn = new Connection(socket);
+                connections.put(key, conn);
+
+                // Запускаем обработку соединений
+                executor.submit(() -> handleClient(socket));
+
+                // Отправляем announcement, чтобы пир узнал о нас
+                sendAnnouncement(conn);
+
+                log.info("Manual peer connected: {}:{}", address, port);
+            } catch (IOException e) {
+                log.warn("Failed to connect to manual peer:{}:{} - {}", address, port, e.getMessage());
+            }
+        });
+    }
+
+    /**
+     * Отправить announcement новому пиру, чтобы он узнал о нас.
+     */
+    private void sendAnnouncement(Connection conn) {
+        try {
+            synchronized (conn.dos) {
+                DiscoveryMessage msg = new DiscoveryMessage(peerId, peerName, p2pPort);
+                String json = objectMapper.writeValueAsString(msg);
+                conn.dos.write(0);
+                conn.dos.writeUTF(json);
+                conn.dos.flush();
+            }
+        } catch (IOException e) {
+            log.warn("Failed to send announcement to manual peer: {}", e.getMessage());
+        }
+    }
+
     public Map<String, Peer> getTrustedPeers() {
         Map<String, Peer> trusted = new ConcurrentHashMap<>();
         discoveredPeers.forEach((id, peer) -> {
@@ -675,6 +774,55 @@ public class P2PNetworkService {
         return trusted;
     }
 
+    /**
+     * Запрос авторизации через ECDH key exchange.
+     * Вместо передачи shared secret в открытом виде,
+     * мы обмениваемся public keys и вычисляем shared secret локально.
+     */
+    public void requestAuthECDH(String targetPeerId, String token) {
+        Peer peer = discoveredPeers.get(targetPeerId);
+        if (peer == null) {
+            log.warn("Peer not found for ECDH auth request: {}", targetPeerId);
+            return;
+        }
+
+        String key = peer.getAddress() + ":" + peer.getPort();
+
+        try {
+            Connection conn;
+            if (!connections.containsKey(key) || connections.get(key).socket.isClosed()) {
+                Socket socket = new Socket(peer.getAddress(), peer.getPort());
+                socket.setKeepAlive(true);
+                socket.setTcpNoDelay(true);
+                conn = new Connection(socket);
+                connections.put(key, conn);
+                executor.submit(() -> handleClient(conn.socket));
+            } else {
+                conn = connections.get(key);
+            }
+
+            // Отправляем наш ECDH public key (type 7)
+            String ourPublicKey = keyExchangeService.getLocalPublicKeyBase64();
+            synchronized (conn.dos) {
+                conn.dos.write(7);
+                conn.dos.writeUTF(token);
+                conn.dos.writeUTF(ourPublicKey);
+                conn.dos.writeUTF(peerId);
+                conn.dos.flush();
+            }
+
+            pendingAuthRequests.put(targetPeerId + ":" + token, new AuthRequest(targetPeerId, token, null));
+            log.info("ECDH auth request sent to {} (public key exchanged)", targetPeerId);
+        } catch (Exception e) {
+            log.error("ECDH auth request error: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Legacy запрос авторизации (с передачей shared secret в открытом виде).
+     * @deprecated Используйте requestAuthECDH для безопасности
+     */
+    @Deprecated
     public void requestAuth(String targetPeerId, String token, String secret) {
         Peer peer = discoveredPeers.get(targetPeerId);
         if (peer == null) {
@@ -710,6 +858,11 @@ public class P2PNetworkService {
         }
     }
 
+    /**
+     * Legacy ответ авторизации.
+     * @deprecated ECDH auth не требует respondAuth — shared secret вычисляется автоматически
+     */
+    @Deprecated
     public void respondAuth(String peerId, String token, boolean approved) {
         Peer peer = discoveredPeers.get(peerId);
         if (peer == null) {
